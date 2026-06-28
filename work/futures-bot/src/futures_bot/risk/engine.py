@@ -113,6 +113,13 @@ class RiskEngine:
             return RiskDecision.reject(RiskReason.DUPLICATE_CLIENT_ORDER_ID, "client order ID was already used")
 
         if intent.order_type == OrderType.LIMIT and intent.limit_price is not None:
+            rounded_limit = context.instrument.spec.round_to_tick(intent.limit_price)
+            if rounded_limit != intent.limit_price:
+                return RiskDecision.reject(
+                    RiskReason.INVALID_TICK_PRICE,
+                    "limit price is not aligned to contract tick size",
+                )
+
             distance = abs(intent.limit_price - context.market.last) / context.market.last
             if distance > self._limits.price_collar_percent:
                 return RiskDecision.reject(RiskReason.PRICE_COLLAR, "limit price is outside price collar")

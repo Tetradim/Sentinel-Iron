@@ -194,6 +194,27 @@ def test_risk_engine_rejects_limit_price_outside_collar():
     assert decision.reason == RiskReason.PRICE_COLLAR
 
 
+def test_risk_engine_rejects_limit_price_not_aligned_to_tick_size():
+    decision = RiskEngine(_limits()).evaluate(
+        _intent(order_type=OrderType.LIMIT, limit_price=Decimal("5000.10")),
+        _context(),
+    )
+
+    assert decision.approved is False
+    assert decision.reason == RiskReason.INVALID_TICK_PRICE
+    assert decision.detail == "limit price is not aligned to contract tick size"
+
+
+def test_risk_engine_approves_limit_price_aligned_to_tick_size():
+    decision = RiskEngine(_limits()).evaluate(
+        _intent(order_type=OrderType.LIMIT, limit_price=Decimal("5000.25")),
+        _context(),
+    )
+
+    assert decision.approved is True
+    assert decision.reason is None
+
+
 def test_risk_engine_approves_order_when_all_checks_pass():
     decision = RiskEngine(_limits()).evaluate(_intent(), _context())
 

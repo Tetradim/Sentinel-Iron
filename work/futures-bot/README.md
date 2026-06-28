@@ -122,6 +122,7 @@ The pre-trade risk engine rejects orders when:
 - realized daily loss reaches the configured limit
 - the contract is past the last safe trade date
 - client order ID has already been used
+- limit price is not aligned to the contract tick size
 - limit price is outside the configured price collar
 
 Audit events can be persisted with `futures_bot.storage.audit.JsonlAuditLog`. It appends one JSON object per line, creates parent directories when needed, stores a copy of each event, and replays immutable event snapshots for diagnostics.

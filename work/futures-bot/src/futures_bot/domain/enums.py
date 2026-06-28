@@ -28,3 +28,4 @@ class RiskReason(StrEnum):
     CONTRACT_NOT_TRADABLE = "contract_not_tradable"
     DUPLICATE_CLIENT_ORDER_ID = "duplicate_client_order_id"
     PRICE_COLLAR = "price_collar"
+    INVALID_TICK_PRICE = "invalid_tick_price"
