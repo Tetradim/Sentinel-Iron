@@ -15,6 +15,7 @@ class RiskLimits:
     max_order_quantity: int
     max_position_abs: int
     max_margin_usage: Decimal
+    max_daily_loss: Decimal
     account_stale_after: timedelta
     market_data_stale_after: timedelta
     price_collar_percent: Decimal
@@ -26,6 +27,8 @@ class RiskLimits:
             raise ValueError("max_position_abs must be positive")
         if not Decimal("0") < self.max_margin_usage <= Decimal("1"):
             raise ValueError("max_margin_usage must be between 0 and 1")
+        if self.max_daily_loss <= 0:
+            raise ValueError("max_daily_loss must be positive")
         if self.account_stale_after <= timedelta(0):
             raise ValueError("account_stale_after must be positive")
         if self.market_data_stale_after <= timedelta(0):
@@ -43,6 +46,7 @@ class RiskContext:
     current_position: Position
     used_client_order_ids: frozenset[str]
     estimated_order_initial_margin: Decimal
+    realized_pnl_today: Decimal
     kill_switch_active: bool
     positions_reconciled: bool
 
@@ -85,6 +89,9 @@ class RiskEngine:
 
         if context.now - context.market.timestamp > self._limits.market_data_stale_after:
             return RiskDecision.reject(RiskReason.STALE_MARKET_DATA, "market data is stale")
+
+        if context.realized_pnl_today <= -self._limits.max_daily_loss:
+            return RiskDecision.reject(RiskReason.MAX_DAILY_LOSS, "realized daily loss limit reached")
 
         if intent.quantity > self._limits.max_order_quantity:
             return RiskDecision.reject(RiskReason.MAX_ORDER_QUANTITY, "order quantity exceeds limit")

@@ -24,6 +24,7 @@ class RiskReason(StrEnum):
     MAX_ORDER_QUANTITY = "max_order_quantity"
     MAX_POSITION = "max_position"
     MAX_MARGIN_USAGE = "max_margin_usage"
+    MAX_DAILY_LOSS = "max_daily_loss"
     CONTRACT_NOT_TRADABLE = "contract_not_tradable"
     DUPLICATE_CLIENT_ORDER_ID = "duplicate_client_order_id"
     PRICE_COLLAR = "price_collar"

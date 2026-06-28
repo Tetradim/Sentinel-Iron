@@ -101,6 +101,7 @@ The pre-trade risk engine rejects orders when:
 - order quantity exceeds the configured limit
 - resulting position exceeds the configured limit
 - estimated margin usage exceeds the configured limit
+- realized daily loss reaches the configured limit
 - the contract is past the last safe trade date
 - client order ID has already been used
 - limit price is outside the configured price collar

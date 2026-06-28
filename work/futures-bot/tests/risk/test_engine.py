@@ -53,6 +53,7 @@ def _limits() -> RiskLimits:
         max_order_quantity=5,
         max_position_abs=10,
         max_margin_usage=Decimal("0.50"),
+        max_daily_loss=Decimal("2500"),
         account_stale_after=timedelta(seconds=30),
         market_data_stale_after=timedelta(seconds=10),
         price_collar_percent=Decimal("0.05"),
@@ -85,6 +86,7 @@ def _context(**overrides) -> RiskContext:
         ),
         used_client_order_ids=frozenset(),
         estimated_order_initial_margin=Decimal("5000"),
+        realized_pnl_today=Decimal("0"),
         kill_switch_active=False,
         positions_reconciled=True,
     )
@@ -153,6 +155,16 @@ def test_risk_engine_rejects_max_margin_usage_breach():
     assert decision.reason == RiskReason.MAX_MARGIN_USAGE
 
 
+def test_risk_engine_rejects_max_daily_loss_breach():
+    decision = RiskEngine(_limits()).evaluate(
+        _intent(),
+        _context(realized_pnl_today=Decimal("-2500")),
+    )
+
+    assert decision.approved is False
+    assert decision.reason == RiskReason.MAX_DAILY_LOSS
+
+
 def test_risk_engine_rejects_contract_after_cutoff():
     expired = _instrument(last_safe_trade_date=date(2026, 6, 27))
 
@@ -188,3 +200,20 @@ def test_risk_engine_approves_order_when_all_checks_pass():
     assert decision.approved is True
     assert decision.reason is None
     assert decision.detail == "approved"
+
+
+def test_risk_limits_rejects_non_positive_max_daily_loss():
+    try:
+        RiskLimits(
+            max_order_quantity=5,
+            max_position_abs=10,
+            max_margin_usage=Decimal("0.50"),
+            max_daily_loss=Decimal("0"),
+            account_stale_after=timedelta(seconds=30),
+            market_data_stale_after=timedelta(seconds=10),
+            price_collar_percent=Decimal("0.05"),
+        )
+    except ValueError as exc:
+        assert str(exc) == "max_daily_loss must be positive"
+    else:
+        raise AssertionError("expected non-positive max_daily_loss to be rejected")
