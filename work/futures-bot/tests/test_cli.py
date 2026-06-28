@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -229,3 +230,77 @@ def test_flatten_command_refuses_without_explicit_confirmation_text(capsys):
     captured = capsys.readouterr()
     assert exit_code == 2
     assert "flatten requires --confirm FLATTEN-LIVE-POSITIONS" in captured.err
+
+
+def test_kill_switch_status_reports_inactive_when_state_file_is_missing(tmp_path, capsys):
+    exit_code = main(
+        [
+            "kill-switch",
+            "--state-file",
+            str(tmp_path / "state" / "kill_switch.json"),
+            "status",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "kill switch inactive" in captured.out
+
+
+def test_kill_switch_activate_writes_state_and_audit_event(tmp_path, capsys):
+    state_path = tmp_path / "state" / "kill_switch.json"
+    audit_path = tmp_path / "audit" / "audit.jsonl"
+
+    exit_code = main(
+        [
+            "kill-switch",
+            "--state-file",
+            str(state_path),
+            "--audit-log",
+            str(audit_path),
+            "activate",
+            "--reason",
+            "operator halt before news release",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "kill switch active: reason=operator halt before news release" in captured.out
+    assert json.loads(state_path.read_text(encoding="utf-8"))["active"] is True
+    assert "operator halt before news release" in state_path.read_text(encoding="utf-8")
+    assert "kill_switch_activated" in audit_path.read_text(encoding="utf-8")
+
+
+def test_kill_switch_clear_writes_inactive_state_and_audit_event(tmp_path, capsys):
+    state_path = tmp_path / "state" / "kill_switch.json"
+    audit_path = tmp_path / "audit" / "audit.jsonl"
+    main(
+        [
+            "kill-switch",
+            "--state-file",
+            str(state_path),
+            "--audit-log",
+            str(audit_path),
+            "activate",
+            "--reason",
+            "operator halt before news release",
+        ]
+    )
+
+    exit_code = main(
+        [
+            "kill-switch",
+            "--state-file",
+            str(state_path),
+            "--audit-log",
+            str(audit_path),
+            "clear",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "kill switch inactive" in captured.out
+    assert json.loads(state_path.read_text(encoding="utf-8"))["active"] is False
+    assert "kill_switch_cleared" in audit_path.read_text(encoding="utf-8")

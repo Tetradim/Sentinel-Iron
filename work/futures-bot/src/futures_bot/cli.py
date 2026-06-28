@@ -11,12 +11,14 @@ from futures_bot.application.broker_connection import (
     BrokerConnectionRequest,
     BrokerConnectionService,
 )
+from futures_bot.application.kill_switch import KillSwitchService
 from futures_bot.brokers.factory import create_broker
 from futures_bot.brokers.ibkr.config import load_ibkr_config
 from futures_bot.brokers.ninjatrader.config import load_ninjatrader_config
 from futures_bot.brokers.optimus.config import load_optimus_config
 from futures_bot.brokers.tradestation.config import load_tradestation_config
 from futures_bot.storage.audit import JsonlAuditLog
+from futures_bot.storage.kill_switch import JsonKillSwitchStore
 
 FLATTEN_CONFIRMATION = "FLATTEN-LIVE-POSITIONS"
 
@@ -29,6 +31,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _config_check(args.broker)
     if args.command == "broker-connect":
         return _broker_connect(args.broker, args.audit_log)
+    if args.command == "kill-switch":
+        return _kill_switch(
+            args.kill_switch_command,
+            args.state_file,
+            args.audit_log,
+            getattr(args, "reason", None),
+        )
     if args.command == "reconcile":
         return _reconcile()
     if args.command == "flatten":
@@ -70,6 +79,26 @@ def _build_parser() -> argparse.ArgumentParser:
         default=os.environ.get("AUDIT_LOG_PATH", "data/audit.jsonl"),
         help="JSONL audit log path. Defaults to AUDIT_LOG_PATH or data/audit.jsonl.",
     )
+
+    kill_switch = subparsers.add_parser(
+        "kill-switch",
+        help="Inspect or change the persisted operator kill switch.",
+    )
+    kill_switch.add_argument(
+        "--state-file",
+        default=os.environ.get("KILL_SWITCH_STATE_PATH", "data/kill_switch.json"),
+        help="Kill-switch state path. Defaults to KILL_SWITCH_STATE_PATH or data/kill_switch.json.",
+    )
+    kill_switch.add_argument(
+        "--audit-log",
+        default=os.environ.get("AUDIT_LOG_PATH", "data/audit.jsonl"),
+        help="JSONL audit log path. Defaults to AUDIT_LOG_PATH or data/audit.jsonl.",
+    )
+    kill_switch_subparsers = kill_switch.add_subparsers(dest="kill_switch_command")
+    kill_switch_subparsers.add_parser("status", help="Show current kill-switch state.")
+    activate = kill_switch_subparsers.add_parser("activate", help="Block new trading until cleared.")
+    activate.add_argument("--reason", required=True, help="Operator reason for activating the kill switch.")
+    kill_switch_subparsers.add_parser("clear", help="Clear the kill switch.")
 
     flatten = subparsers.add_parser("flatten", help="Flatten live broker positions.")
     flatten.add_argument("--confirm", default="", help=f"Must equal {FLATTEN_CONFIRMATION}.")
@@ -158,6 +187,41 @@ def _broker_connect(broker: str | None, audit_log_path: str) -> int:
         f"account_id={result.account.account_id} "
         f"positions={len(result.positions)}"
     )
+    return 0
+
+
+def _kill_switch(
+    command: str | None,
+    state_file_path: str,
+    audit_log_path: str,
+    reason: str | None,
+) -> int:
+    if command is None:
+        print("kill-switch requires a subcommand: status, activate, or clear", file=sys.stderr)
+        return 2
+
+    service = KillSwitchService(
+        store=JsonKillSwitchStore(Path(state_file_path)),
+        audit_log=JsonlAuditLog(Path(audit_log_path)),
+    )
+    try:
+        if command == "status":
+            state = service.status()
+        elif command == "activate":
+            state = service.activate(reason=reason or "", timestamp=datetime.now(timezone.utc))
+        elif command == "clear":
+            state = service.clear(timestamp=datetime.now(timezone.utc))
+        else:
+            print(f"unsupported kill-switch command: {command}", file=sys.stderr)
+            return 2
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    if state.active:
+        print(f"kill switch active: reason={state.reason}")
+    else:
+        print("kill switch inactive")
     return 0
 
 

@@ -2,7 +2,7 @@
 
 Production-oriented futures trading bot core.
 
-This project is being built safety-first. The current slice provides tested domain models, pre-trade risk controls, pre-broker risk decision auditing, broker connection lifecycle handling, broker-facing order submission orchestration, broker configuration validation, live-capable TradeStation, NinjaTrader, IBKR, and Optimus broker adapter boundaries, reconciliation logic, immutable audit events, durable JSONL audit and order-activity storage, and conservative operator CLI commands.
+This project is being built safety-first. The current slice provides tested domain models, pre-trade risk controls, pre-broker risk decision auditing, broker connection lifecycle handling, broker-facing order submission orchestration, broker configuration validation, live-capable TradeStation, NinjaTrader, IBKR, and Optimus broker adapter boundaries, reconciliation logic, immutable audit events, durable JSONL audit, order-activity, and kill-switch storage, and conservative operator CLI commands.
 
 It does not yet submit live orders. That is intentional. Live order submission should only be added after broker connection lifecycle, order acknowledgement handling, fill handling, cancellation, reconciliation, and audit trails are implemented and tested against a real broker API.
 
@@ -115,6 +115,16 @@ futures-bot broker-connect --broker optimus --audit-log data/audit.jsonl
 
 `broker-connect` currently supports TradeStation, IBKR, NinjaTrader, and Optimus. TradeStation and NinjaTrader use their configured paper or live HTTP base URLs. IBKR uses TWS or IB Gateway through the optional `ibapi` transport. Optimus uses the configured HTTP route bridge for the selected execution provider. These paths validate broker connectivity, fetch account and position state, write the broker connection audit event to the JSONL audit log, and never submit or cancel orders.
 
+Inspect, activate, or clear the persistent operator kill switch:
+
+```powershell
+futures-bot kill-switch --state-file data/kill_switch.json status
+futures-bot kill-switch --state-file data/kill_switch.json --audit-log data/audit.jsonl activate --reason "operator halt before news release"
+futures-bot kill-switch --state-file data/kill_switch.json --audit-log data/audit.jsonl clear
+```
+
+When `--state-file` is omitted, the command uses `KILL_SWITCH_STATE_PATH` and falls back to `data/kill_switch.json`. The command writes `kill_switch_activated` and `kill_switch_cleared` audit events without broker credentials or other secrets.
+
 Attempt reconciliation:
 
 ```powershell
@@ -158,6 +168,8 @@ The pre-trade risk engine rejects orders when:
 - limit price is outside the configured price collar
 
 Pre-trade risk checks can be run through `futures_bot.application.risk_check.RiskCheckService`. It returns the same `RiskDecision` as the risk engine and appends a `risk_decision` audit event with timestamp, account ID, client order ID, instrument ID, side, quantity, order type, limit price, approval status, rejection reason, and detail before broker submission.
+
+The operator kill switch can be persisted with `futures_bot.storage.kill_switch.JsonKillSwitchStore` and controlled through `futures_bot.application.kill_switch.KillSwitchService`. Missing state files load as inactive. Activating the switch requires a non-empty operator reason, stores the active state, and appends a `kill_switch_activated` audit event. Clearing the switch stores an inactive state and appends a `kill_switch_cleared` audit event with the previous reason.
 
 Broker adapters can be connected through `futures_bot.application.broker_connection.BrokerConnectionService`. It accepts only real broker environments (`paper` or `live`), calls the configured adapter, retrieves account and position state after connection, records `broker_connected` audit events, and records `broker_connection_failed` when adapters raise `futures_bot.ports.broker.BrokerConnectionError`.
 
