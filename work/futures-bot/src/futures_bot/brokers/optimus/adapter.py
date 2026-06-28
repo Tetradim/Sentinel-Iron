@@ -11,6 +11,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
+from futures_bot.application.margin_estimates import MarginEstimateUnavailable
+from futures_bot.application.rebalance_risk_context import MarginEstimate
 from futures_bot.brokers.optimus.config import OptimusConfig
 from futures_bot.domain.enums import OrderSide, OrderType
 from futures_bot.domain.orders import BrokerOrder
@@ -158,6 +160,11 @@ class OptimusBroker:
             raise BrokerSubmissionError(exc.reason, exc.broker_error_code) from exc
         except ValueError as exc:
             raise BrokerSubmissionError(str(exc)) from exc
+
+    def estimate_order_margin(self, order: BrokerOrder) -> MarginEstimate:
+        raise MarginEstimateUnavailable(
+            "Optimus adapter does not expose broker-provided order margin estimates"
+        )
 
     def cancel_order(self, broker_order_id: str) -> None:
         if not broker_order_id:

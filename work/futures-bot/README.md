@@ -216,6 +216,8 @@ The TradeStation adapter implements the same margin estimate provider boundary t
 
 The NinjaTrader adapter exposes the margin estimate provider method but fails closed with `MarginEstimateUnavailable` because the current REST boundary does not provide a verified broker-derived order margin preview. Rebalance execution using NinjaTrader must supply margin estimates from another approved provider before gateway submission.
 
+The Optimus adapter also exposes the margin estimate provider method but fails closed with `MarginEstimateUnavailable` because the configured route bridge does not provide a verified broker-derived order margin preview. Rebalance execution using Optimus must supply route-approved margin estimates before gateway submission.
+
 Approved order intents can be submitted through `futures_bot.application.order_submission.OrderSubmissionService`. It always runs the audited risk check first, blocks rejected orders before the broker port is called, converts approved intents into `BrokerOrder` values, submits them through the configured broker adapter, and audits blocked, submitted, and broker-rejected handoffs. Configure it with a lifecycle store to persist working and rejected lifecycle states as soon as the submission decision is known.
 
 Broker adapters should raise `futures_bot.ports.broker.BrokerSubmissionError` when the broker, exchange, or route rejects a submitted order synchronously. The submission service records a rejected lifecycle with the broker reason and optional broker error code instead of leaving the order in an ambiguous pending state.

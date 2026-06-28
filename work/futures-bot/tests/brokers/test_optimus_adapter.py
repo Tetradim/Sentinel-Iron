@@ -7,6 +7,7 @@ from typing import Mapping
 
 import pytest
 
+from futures_bot.application.margin_estimates import MarginEstimateUnavailable
 from futures_bot.brokers.optimus.config import BrokerEnvironment, OptimusConfig, OptimusRoute
 from futures_bot.domain.enums import OrderSide, OrderType
 from futures_bot.domain.orders import BrokerOrder
@@ -256,6 +257,27 @@ def test_optimus_submit_order_maps_bridge_errors_to_submission_error():
 
     assert exc_info.value.reason == "route rejected order: market closed"
     assert exc_info.value.broker_error_code == "MARKET_CLOSED"
+
+
+def test_optimus_adapter_fails_closed_for_order_margin_estimates():
+    transport = RecordingTransport(())
+    broker = _adapter(transport)
+
+    with pytest.raises(MarginEstimateUnavailable) as exc_info:
+        broker.estimate_order_margin(
+            BrokerOrder(
+                instrument_id="ES-202609-CME",
+                side=OrderSide.BUY,
+                quantity=1,
+                order_type=OrderType.MARKET,
+                client_order_id="client-4",
+            )
+        )
+
+    assert exc_info.value.reason == (
+        "Optimus adapter does not expose broker-provided order margin estimates"
+    )
+    assert transport.requests == []
 
 
 def test_optimus_cancel_order_uses_cancel_endpoint():
