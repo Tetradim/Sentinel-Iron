@@ -4,6 +4,7 @@ import pytest
 
 from futures_bot.ports.broker import (
     BrokerCancellationError,
+    BrokerConnectionError,
     BrokerOrderUpdate,
     BrokerOrderUpdateType,
     BrokerSubmissionError,
@@ -24,6 +25,22 @@ def test_broker_submission_error_exposes_reason_and_error_code():
 def test_broker_submission_error_requires_reason():
     with pytest.raises(ValueError, match="reason is required"):
         BrokerSubmissionError(reason="")
+
+
+def test_broker_connection_error_exposes_reason_and_error_code():
+    error = BrokerConnectionError(
+        reason="broker gateway unavailable",
+        broker_error_code="GATEWAY_DOWN",
+    )
+
+    assert str(error) == "broker gateway unavailable"
+    assert error.reason == "broker gateway unavailable"
+    assert error.broker_error_code == "GATEWAY_DOWN"
+
+
+def test_broker_connection_error_requires_reason():
+    with pytest.raises(ValueError, match="reason is required"):
+        BrokerConnectionError(reason="")
 
 
 def test_broker_cancellation_error_exposes_reason_and_error_code():
