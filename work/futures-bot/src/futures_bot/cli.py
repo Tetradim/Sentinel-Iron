@@ -4,7 +4,7 @@ import argparse
 import os
 import sys
 from collections.abc import Sequence
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from futures_bot.application.broker_connection import (
@@ -22,6 +22,7 @@ from futures_bot.brokers.ninjatrader.config import load_ninjatrader_config
 from futures_bot.brokers.optimus.config import load_optimus_config
 from futures_bot.brokers.tradestation.config import load_tradestation_config
 from futures_bot.storage.audit import JsonlAuditLog
+from futures_bot.storage.instruments import JsonInstrumentStore
 from futures_bot.storage.kill_switch import JsonKillSwitchStore
 from futures_bot.storage.margin_schedules import JsonMarginScheduleStore
 from futures_bot.storage.positions import JsonPositionStore
@@ -48,6 +49,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _reconcile(args.broker, args.internal_positions, args.audit_log)
     if args.command == "margin-schedules":
         return _margin_schedules(args.margin_schedule_command, args.schedule_file)
+    if args.command == "instrument-catalog":
+        return _instrument_catalog(
+            args.instrument_catalog_command,
+            args.catalog_file,
+            getattr(args, "trading_day", None),
+        )
     if args.command == "flatten":
         return _flatten(args.confirm, args.broker, args.audit_log)
 
@@ -106,6 +113,31 @@ def _build_parser() -> argparse.ArgumentParser:
     margin_schedule_subparsers.add_parser(
         "validate",
         help="Validate schedule structure and freshness without placing orders.",
+    )
+
+    instrument_catalog = subparsers.add_parser(
+        "instrument-catalog",
+        help="Validate operator-supplied futures instrument catalogs.",
+    )
+    instrument_catalog.add_argument(
+        "--catalog-file",
+        default=os.environ.get("INSTRUMENT_CATALOG_PATH", "data/instruments.json"),
+        help=(
+            "Instrument catalog JSON path. "
+            "Defaults to INSTRUMENT_CATALOG_PATH or data/instruments.json."
+        ),
+    )
+    instrument_catalog_subparsers = instrument_catalog.add_subparsers(
+        dest="instrument_catalog_command"
+    )
+    validate_catalog = instrument_catalog_subparsers.add_parser(
+        "validate",
+        help="Validate catalog structure and optional trading-day safety.",
+    )
+    validate_catalog.add_argument(
+        "--trading-day",
+        default=None,
+        help="Optional YYYY-MM-DD date; fails if any catalog contract cannot trade on that day.",
     )
 
     broker_connect = subparsers.add_parser(
@@ -339,6 +371,48 @@ def _margin_schedules(command: str | None, schedule_file_path: str) -> int:
         return 1
 
     print(f"margin schedules valid: entries={len(entries)}")
+    return 0
+
+
+def _instrument_catalog(
+    command: str | None,
+    catalog_file_path: str,
+    trading_day_value: str | None,
+) -> int:
+    if command is None:
+        print("instrument-catalog requires a subcommand: validate", file=sys.stderr)
+        return 2
+    if command != "validate":
+        print(f"unsupported instrument-catalog command: {command}", file=sys.stderr)
+        return 2
+
+    try:
+        instruments = JsonInstrumentStore(Path(catalog_file_path)).load()
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    if trading_day_value is not None:
+        try:
+            trading_day = date.fromisoformat(trading_day_value)
+        except ValueError:
+            print("trading-day must be YYYY-MM-DD", file=sys.stderr)
+            return 2
+
+        non_tradable = sorted(
+            instrument.instrument_id
+            for instrument in instruments.values()
+            if not instrument.can_trade_on(trading_day)
+        )
+        if non_tradable:
+            print(
+                "instrument catalog contains non-tradable contracts for "
+                f"{trading_day.isoformat()}: {', '.join(non_tradable)}",
+                file=sys.stderr,
+            )
+            return 1
+
+    print(f"instrument catalog valid: entries={len(instruments)}")
     return 0
 
 

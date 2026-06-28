@@ -407,6 +407,69 @@ def test_margin_schedules_validate_reports_stale_schedule(tmp_path, capsys):
     assert "margin schedule for ES-202609-CME expired at 2020-06-29T16:45:00+00:00" in captured.err
 
 
+def test_instrument_catalog_validate_reports_valid_file(tmp_path, capsys):
+    catalog_path = tmp_path / "state" / "instruments.json"
+    catalog_path.parent.mkdir(parents=True)
+    catalog_path.write_text(
+        json.dumps([_instrument_catalog_record("ES-202609-CME")]),
+        encoding="utf-8",
+    )
+
+    exit_code = main(
+        [
+            "instrument-catalog",
+            "--catalog-file",
+            str(catalog_path),
+            "validate",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "instrument catalog valid: entries=1" in captured.out
+
+
+def test_instrument_catalog_validate_reports_missing_file(tmp_path, capsys):
+    exit_code = main(
+        [
+            "instrument-catalog",
+            "--catalog-file",
+            str(tmp_path / "missing.json"),
+            "validate",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "instrument catalog file does not exist" in captured.err
+
+
+def test_instrument_catalog_validate_reports_unsafe_trading_day(tmp_path, capsys):
+    catalog_path = tmp_path / "instruments.json"
+    catalog_path.write_text(
+        json.dumps([_instrument_catalog_record("ES-202609-CME")]),
+        encoding="utf-8",
+    )
+
+    exit_code = main(
+        [
+            "instrument-catalog",
+            "--catalog-file",
+            str(catalog_path),
+            "validate",
+            "--trading-day",
+            "2026-09-15",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert (
+        "instrument catalog contains non-tradable contracts for 2026-09-15: "
+        "ES-202609-CME"
+    ) in captured.err
+
+
 def test_flatten_command_refuses_without_explicit_confirmation_text(capsys):
     exit_code = main(["flatten"])
 
@@ -523,3 +586,24 @@ def test_kill_switch_clear_writes_inactive_state_and_audit_event(tmp_path, capsy
     assert "kill switch inactive" in captured.out
     assert json.loads(state_path.read_text(encoding="utf-8"))["active"] is False
     assert "kill_switch_cleared" in audit_path.read_text(encoding="utf-8")
+
+
+def _instrument_catalog_record(instrument_id: str) -> dict[str, object]:
+    symbol, contract_month, exchange = instrument_id.split("-")
+    return {
+        "calendar": {
+            "first_notice_date": None,
+            "last_safe_trade_date": "2026-09-14",
+            "last_trade_date": "2026-09-18",
+        },
+        "instrument_id": instrument_id,
+        "spec": {
+            "contract_month": contract_month,
+            "currency": "USD",
+            "exchange": exchange,
+            "multiplier": "50",
+            "settlement_type": "cash",
+            "symbol": symbol,
+            "tick_size": "0.25",
+        },
+    }

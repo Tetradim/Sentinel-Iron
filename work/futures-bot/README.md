@@ -153,6 +153,15 @@ futures-bot margin-schedules --schedule-file data/margin_schedules.json validate
 
 When `--schedule-file` is omitted, the command uses `MARGIN_SCHEDULE_PATH` and falls back to `data/margin_schedules.json`. It loads the JSON schedule file, validates structure, duplicate instruments, Decimal margin values, timezone-aware expiries, and freshness, then exits nonzero before any broker call if the schedule is missing, malformed, or stale.
 
+Validate operator-supplied futures instrument catalogs before using them in signal generation or rebalance risk contexts:
+
+```powershell
+futures-bot instrument-catalog --catalog-file data/instruments.json validate
+futures-bot instrument-catalog --catalog-file data/instruments.json validate --trading-day 2026-09-14
+```
+
+When `--catalog-file` is omitted, the command uses `INSTRUMENT_CATALOG_PATH` and falls back to `data/instruments.json`. It loads the JSON catalog file, validates structure, duplicate instruments, Decimal multiplier and tick-size values, settlement types, and ISO first-notice, last-trade, and last-safe trade dates. When `--trading-day` is supplied, the command exits nonzero if any configured contract cannot trade on that date.
+
 Attempt flatten:
 
 ```powershell
