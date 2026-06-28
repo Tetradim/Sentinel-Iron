@@ -140,6 +140,8 @@ Broker adapters can be connected through `futures_bot.application.broker_connect
 
 Trading readiness can be evaluated through `futures_bot.application.trading_readiness.TradingReadinessService`. It blocks trading when the broker is disconnected, account state is missing or stale, or positions are not reconciled, and records a `trading_readiness` audit event for each evaluation before order submission is allowed.
 
+Readiness-gated order entry should flow through `futures_bot.application.order_gateway.OrderGatewayService`. It refuses new orders when the latest readiness result is negative, writes an `order_submission_blocked` audit event with the readiness reason, and only then delegates ready orders into the audited submission service.
+
 Approved order intents can be submitted through `futures_bot.application.order_submission.OrderSubmissionService`. It always runs the audited risk check first, blocks rejected orders before the broker port is called, converts approved intents into `BrokerOrder` values, submits them through the configured broker adapter, and audits blocked, submitted, and broker-rejected handoffs.
 
 Broker adapters should raise `futures_bot.ports.broker.BrokerSubmissionError` when the broker, exchange, or route rejects a submitted order synchronously. The submission service records a rejected lifecycle with the broker reason and optional broker error code instead of leaving the order in an ambiguous pending state.
