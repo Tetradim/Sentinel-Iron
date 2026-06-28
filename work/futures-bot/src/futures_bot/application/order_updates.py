@@ -63,6 +63,11 @@ class OrderUpdateService:
             if activity_record is not None:
                 if activity_record.instrument_id != update.instrument_id:
                     raise ValueError("broker update instrument_id does not match order activity")
+                if (
+                    update.broker_order_id is not None
+                    and activity_record.broker_order_id != update.broker_order_id
+                ):
+                    raise ValueError("broker update broker_order_id does not match order activity")
                 if resolved_order_quantity is None:
                     resolved_order_quantity = activity_record.quantity
                 if resolved_order_side is None:

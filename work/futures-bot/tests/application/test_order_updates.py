@@ -245,6 +245,48 @@ def test_order_update_service_rejects_activity_instrument_mismatch():
     assert audit_log.events == ()
 
 
+def test_order_update_service_rejects_activity_broker_order_id_mismatch():
+    audit_log = InMemoryAuditLog()
+    order_activity = StaticOrderActivityLookup((_activity_record(),))
+    service = OrderUpdateService(audit_log, order_activity=order_activity)
+    lifecycle = OrderLifecycle.pending_submit(client_order_id="order-1").mark_working()
+
+    try:
+        service.apply(
+            lifecycle=lifecycle,
+            update=_update(
+                BrokerOrderUpdateType.FILL,
+                fill_quantity=1,
+                broker_order_id="broker-456",
+            ),
+        )
+    except ValueError as exc:
+        assert str(exc) == "broker update broker_order_id does not match order activity"
+    else:
+        raise AssertionError("expected mismatched broker order ID to be rejected")
+
+    assert audit_log.events == ()
+
+
+def test_order_update_service_allows_missing_broker_order_id_when_activity_matches_client_order():
+    audit_log = InMemoryAuditLog()
+    order_activity = StaticOrderActivityLookup((_activity_record(),))
+    service = OrderUpdateService(audit_log, order_activity=order_activity)
+    lifecycle = OrderLifecycle.pending_submit(client_order_id="order-1").mark_working()
+
+    updated = service.apply(
+        lifecycle=lifecycle,
+        update=_update(
+            BrokerOrderUpdateType.FILL,
+            fill_quantity=1,
+            broker_order_id=None,
+        ),
+    )
+
+    assert updated.status == OrderLifecycleStatus.PARTIALLY_FILLED
+    assert audit_log.events[-1]["broker_order_id"] is None
+
+
 def test_order_update_service_requires_order_side_for_position_ledger_fills():
     audit_log = InMemoryAuditLog()
     position_ledger = RecordingPositionLedger()
