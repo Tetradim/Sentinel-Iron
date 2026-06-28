@@ -44,6 +44,8 @@ class AccountSnapshot:
             raise ValueError("initial_margin cannot be negative")
         if self.maintenance_margin < 0:
             raise ValueError("maintenance_margin cannot be negative")
+        if self.buying_power < 0:
+            raise ValueError("buying_power cannot be negative")
 
     @property
     def margin_usage(self) -> Decimal:

@@ -126,6 +126,7 @@ The pre-trade risk engine rejects orders when:
 - estimated order notional exceeds the configured limit
 - estimated resulting position notional exceeds the configured limit
 - estimated margin usage exceeds the configured limit
+- estimated initial margin exceeds broker-reported buying power
 - realized daily loss reaches the configured limit
 - the contract is past the last safe trade date
 - client order ID has already been used

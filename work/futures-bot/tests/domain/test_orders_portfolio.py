@@ -64,3 +64,15 @@ def test_account_margin_usage_is_initial_margin_divided_by_equity():
     )
 
     assert account.margin_usage == Decimal("0.25")
+
+
+def test_account_snapshot_rejects_negative_buying_power():
+    with pytest.raises(ValueError, match="buying_power cannot be negative"):
+        AccountSnapshot(
+            account_id="DU12345",
+            equity=Decimal("100000"),
+            initial_margin=Decimal("25000"),
+            maintenance_margin=Decimal("20000"),
+            buying_power=Decimal("-1"),
+            timestamp=datetime(2026, 6, 28, 14, 30, tzinfo=timezone.utc),
+        )

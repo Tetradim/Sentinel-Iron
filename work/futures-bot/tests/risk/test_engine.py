@@ -218,6 +218,19 @@ def test_risk_engine_rejects_max_margin_usage_breach():
     assert decision.reason == RiskReason.MAX_MARGIN_USAGE
 
 
+def test_risk_engine_rejects_insufficient_buying_power():
+    account = replace(_context().account, buying_power=Decimal("4000"))
+
+    decision = RiskEngine(_limits()).evaluate(
+        _intent(),
+        _context(account=account, estimated_order_initial_margin=Decimal("5000")),
+    )
+
+    assert decision.approved is False
+    assert decision.reason == RiskReason.INSUFFICIENT_BUYING_POWER
+    assert decision.detail == "estimated initial margin exceeds buying power"
+
+
 def test_risk_engine_rejects_max_daily_loss_breach():
     decision = RiskEngine(_limits()).evaluate(
         _intent(),

@@ -146,6 +146,12 @@ class RiskEngine:
         if margin_usage > self._limits.max_margin_usage:
             return RiskDecision.reject(RiskReason.MAX_MARGIN_USAGE, "estimated margin usage exceeds limit")
 
+        if context.estimated_order_initial_margin > context.account.buying_power:
+            return RiskDecision.reject(
+                RiskReason.INSUFFICIENT_BUYING_POWER,
+                "estimated initial margin exceeds buying power",
+            )
+
         if not context.instrument.can_trade_on(context.now.date()):
             return RiskDecision.reject(RiskReason.CONTRACT_NOT_TRADABLE, "contract is past last safe trade date")
 

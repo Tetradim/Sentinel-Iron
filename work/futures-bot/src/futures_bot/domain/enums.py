@@ -31,6 +31,7 @@ class RiskReason(StrEnum):
     MAX_POSITION = "max_position"
     MAX_POSITION_NOTIONAL = "max_position_notional"
     MAX_MARGIN_USAGE = "max_margin_usage"
+    INSUFFICIENT_BUYING_POWER = "insufficient_buying_power"
     MAX_DAILY_LOSS = "max_daily_loss"
     CONTRACT_NOT_TRADABLE = "contract_not_tradable"
     DUPLICATE_CLIENT_ORDER_ID = "duplicate_client_order_id"
