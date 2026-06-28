@@ -208,6 +208,8 @@ Eligible rebalance phase intents can be submitted through `futures_bot.applicati
 
 Risk contexts for rebalance intents can be built with `futures_bot.application.rebalance_risk_context.build_rebalance_risk_contexts`. It maps each eligible client order ID to a `RiskContext` from caller-provided account, instrument, market, current position, margin estimate, order-activity, PnL, kill-switch, and reconciliation inputs, and rejects duplicate client order IDs or missing/mismatched instrument-scoped inputs before any gateway submission is attempted.
 
+Order margin inputs can be requested through `futures_bot.application.margin_estimates.MarginEstimateService`. It converts intents to broker orders, asks the configured provider for broker/API-derived initial and maintenance margin estimates, audits each estimate, audits provider failures, and raises `MarginEstimateUnavailable` instead of inventing fallback margin.
+
 Approved order intents can be submitted through `futures_bot.application.order_submission.OrderSubmissionService`. It always runs the audited risk check first, blocks rejected orders before the broker port is called, converts approved intents into `BrokerOrder` values, submits them through the configured broker adapter, and audits blocked, submitted, and broker-rejected handoffs. Configure it with a lifecycle store to persist working and rejected lifecycle states as soon as the submission decision is known.
 
 Broker adapters should raise `futures_bot.ports.broker.BrokerSubmissionError` when the broker, exchange, or route rejects a submitted order synchronously. The submission service records a rejected lifecycle with the broker reason and optional broker error code instead of leaving the order in an ambiguous pending state.
