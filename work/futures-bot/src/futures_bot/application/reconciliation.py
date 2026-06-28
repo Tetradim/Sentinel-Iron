@@ -23,8 +23,10 @@ class ReconcilePositionsUseCase:
         broker_positions: Iterable[Position],
     ) -> ReconciliationResult:
         mismatches: list[str] = []
+        broker_position_by_instrument: dict[str, Position] = {}
 
         for broker_position in broker_positions:
+            broker_position_by_instrument[broker_position.instrument_id] = broker_position
             internal_position = internal_positions.get(broker_position.instrument_id)
             if internal_position is None:
                 mismatches.append(f"missing internal position for {broker_position.instrument_id}")
@@ -36,6 +38,13 @@ class ReconcilePositionsUseCase:
                     f"internal={internal_position.quantity} "
                     f"broker={broker_position.quantity}"
                 )
+
+        for internal_position in internal_positions.values():
+            if (
+                internal_position.quantity != 0
+                and internal_position.instrument_id not in broker_position_by_instrument
+            ):
+                mismatches.append(f"missing broker position for {internal_position.instrument_id}")
 
         result = ReconciliationResult(
             positions_reconciled=not mismatches,

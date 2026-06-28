@@ -13,6 +13,7 @@ from futures_bot.application.broker_connection import (
 )
 from futures_bot.application.kill_switch import KillSwitchService
 from futures_bot.application.position_flattening import PositionFlatteningService
+from futures_bot.application.reconciliation import ReconcilePositionsUseCase
 from futures_bot.brokers.factory import create_broker
 from futures_bot.brokers.ibkr.config import load_ibkr_config
 from futures_bot.brokers.ninjatrader.config import load_ninjatrader_config
@@ -20,6 +21,7 @@ from futures_bot.brokers.optimus.config import load_optimus_config
 from futures_bot.brokers.tradestation.config import load_tradestation_config
 from futures_bot.storage.audit import JsonlAuditLog
 from futures_bot.storage.kill_switch import JsonKillSwitchStore
+from futures_bot.storage.positions import JsonPositionStore
 
 FLATTEN_CONFIRMATION = "FLATTEN-LIVE-POSITIONS"
 
@@ -40,7 +42,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             getattr(args, "reason", None),
         )
     if args.command == "reconcile":
-        return _reconcile()
+        return _reconcile(args.broker, args.internal_positions, args.audit_log)
     if args.command == "flatten":
         return _flatten(args.confirm, args.broker, args.audit_log)
 
@@ -61,7 +63,25 @@ def _build_parser() -> argparse.ArgumentParser:
             "Defaults to BROKER or ibkr."
         ),
     )
-    subparsers.add_parser("reconcile", help="Reconcile internal and broker positions.")
+    reconcile = subparsers.add_parser("reconcile", help="Reconcile internal and broker positions.")
+    reconcile.add_argument(
+        "--broker",
+        default=None,
+        help="Broker to reconcile against. Defaults to BROKER or tradestation.",
+    )
+    reconcile.add_argument(
+        "--internal-positions",
+        default=os.environ.get("INTERNAL_POSITIONS_PATH", "data/internal_positions.json"),
+        help=(
+            "Internal position snapshot JSON path. "
+            "Defaults to INTERNAL_POSITIONS_PATH or data/internal_positions.json."
+        ),
+    )
+    reconcile.add_argument(
+        "--audit-log",
+        default=os.environ.get("AUDIT_LOG_PATH", "data/audit.jsonl"),
+        help="JSONL audit log path. Defaults to AUDIT_LOG_PATH or data/audit.jsonl.",
+    )
 
     broker_connect = subparsers.add_parser(
         "broker-connect",
@@ -236,9 +256,38 @@ def _kill_switch(
     return 0
 
 
-def _reconcile() -> int:
-    print("No live broker adapter is wired for reconciliation yet.", file=sys.stderr)
-    return 1
+def _reconcile(broker: str | None, internal_positions_path: str, audit_log_path: str) -> int:
+    selected_broker = (broker or os.environ.get("BROKER") or "tradestation").strip().lower()
+    try:
+        internal_positions = JsonPositionStore(Path(internal_positions_path)).load()
+        configured_broker = create_broker(selected_broker, os.environ)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    try:
+        configured_broker.connect()
+        broker_positions = configured_broker.get_positions()
+    except Exception as exc:
+        print(f"reconcile failed: {exc}", file=sys.stderr)
+        return 1
+
+    result = ReconcilePositionsUseCase(
+        audit_log=JsonlAuditLog(Path(audit_log_path)),
+    ).execute(
+        internal_positions=internal_positions,
+        broker_positions=broker_positions,
+    )
+    if not result.positions_reconciled:
+        print(f"positions not reconciled: {'; '.join(result.mismatches)}", file=sys.stderr)
+        return 1
+
+    print(
+        "positions reconciled: "
+        f"broker={selected_broker} "
+        f"broker_positions={len(broker_positions)}"
+    )
+    return 0
 
 
 def _flatten(confirm: str, broker: str | None, audit_log_path: str) -> int:

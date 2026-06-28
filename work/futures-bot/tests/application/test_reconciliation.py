@@ -42,6 +42,32 @@ def test_missing_internal_position_for_broker_position_rejects_trading():
     assert result.mismatches == ("missing internal position for ES-202609-CME",)
 
 
+def test_missing_broker_position_for_nonzero_internal_position_rejects_trading():
+    audit_log = InMemoryAuditLog()
+    use_case = ReconcilePositionsUseCase(audit_log=audit_log)
+
+    result = use_case.execute(
+        internal_positions={"ES-202609-CME": _position("ES-202609-CME", 1)},
+        broker_positions=[],
+    )
+
+    assert result.positions_reconciled is False
+    assert result.mismatches == ("missing broker position for ES-202609-CME",)
+
+
+def test_missing_broker_position_for_zero_internal_position_is_reconciled():
+    audit_log = InMemoryAuditLog()
+    use_case = ReconcilePositionsUseCase(audit_log=audit_log)
+
+    result = use_case.execute(
+        internal_positions={"ES-202609-CME": _position("ES-202609-CME", 0)},
+        broker_positions=[],
+    )
+
+    assert result.positions_reconciled is True
+    assert result.mismatches == ()
+
+
 def test_quantity_mismatch_rejects_trading():
     audit_log = InMemoryAuditLog()
     use_case = ReconcilePositionsUseCase(audit_log=audit_log)

@@ -240,12 +240,93 @@ def test_config_check_exits_nonzero_for_invalid_config(monkeypatch, capsys):
     assert "IBKR_HOST is required" in captured.err
 
 
-def test_reconcile_command_reports_no_broker_adapter_wired_yet(capsys):
-    exit_code = main(["reconcile"])
+def test_reconcile_command_uses_configured_broker_and_writes_audit_log(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    _set_valid_tradestation_env(monkeypatch)
+    broker = FakeBroker()
+
+    def create_fake_broker(name: str, env: object):
+        assert name == "tradestation"
+        return broker
+
+    monkeypatch.setattr("futures_bot.cli.create_broker", create_fake_broker)
+    internal_positions_path = tmp_path / "state" / "positions.json"
+    internal_positions_path.parent.mkdir(parents=True)
+    internal_positions_path.write_text(
+        json.dumps(
+            [
+                {
+                    "instrument_id": "@ESU26",
+                    "quantity": 1,
+                    "average_price": "5000.25",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    audit_log_path = tmp_path / "audit" / "reconcile.jsonl"
+
+    exit_code = main(
+        [
+            "reconcile",
+            "--broker",
+            "tradestation",
+            "--internal-positions",
+            str(internal_positions_path),
+            "--audit-log",
+            str(audit_log_path),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert broker.connected is True
+    assert "positions reconciled: broker=tradestation broker_positions=1" in captured.out
+    assert "position_reconciliation" in audit_log_path.read_text(encoding="utf-8")
+
+
+def test_reconcile_command_reports_mismatches(monkeypatch, tmp_path, capsys):
+    _set_valid_tradestation_env(monkeypatch)
+    broker = FakeBroker()
+
+    def create_fake_broker(name: str, env: object):
+        assert name == "tradestation"
+        return broker
+
+    monkeypatch.setattr("futures_bot.cli.create_broker", create_fake_broker)
+    internal_positions_path = tmp_path / "positions.json"
+    internal_positions_path.write_text(
+        json.dumps(
+            [
+                {
+                    "instrument_id": "@ESU26",
+                    "quantity": 2,
+                    "average_price": "5000.25",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    audit_log_path = tmp_path / "audit" / "reconcile-mismatch.jsonl"
+
+    exit_code = main(
+        [
+            "reconcile",
+            "--broker",
+            "tradestation",
+            "--internal-positions",
+            str(internal_positions_path),
+            "--audit-log",
+            str(audit_log_path),
+        ]
+    )
 
     captured = capsys.readouterr()
     assert exit_code == 1
-    assert "No live broker adapter is wired for reconciliation yet." in captured.err
+    assert "positions not reconciled: quantity mismatch for @ESU26: internal=2 broker=1" in captured.err
 
 
 def test_flatten_command_refuses_without_explicit_confirmation_text(capsys):

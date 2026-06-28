@@ -2,7 +2,7 @@
 
 Production-oriented futures trading bot core.
 
-This project is being built safety-first. The current slice provides tested domain models, pre-trade risk controls, pre-broker risk decision auditing, broker connection lifecycle handling, broker-facing order submission orchestration, broker configuration validation, live-capable TradeStation, NinjaTrader, IBKR, and Optimus broker adapter boundaries, reconciliation logic, immutable audit events, durable JSONL audit, order-activity, and kill-switch storage, confirmed emergency position flattening, and conservative operator CLI commands.
+This project is being built safety-first. The current slice provides tested domain models, pre-trade risk controls, pre-broker risk decision auditing, broker connection lifecycle handling, broker-facing order submission orchestration, broker configuration validation, live-capable TradeStation, NinjaTrader, IBKR, and Optimus broker adapter boundaries, broker-backed reconciliation, immutable audit events, durable JSONL audit, position, order-activity, and kill-switch storage, confirmed emergency position flattening, and conservative operator CLI commands.
 
 It does not yet run autonomous strategy-driven live order entry. The current live-capable order submission surface is the explicit operator-confirmed emergency flatten command. Strategy-driven live order loops should only be added after broker connection lifecycle, order acknowledgement handling, fill handling, cancellation, reconciliation, persistent safety state, and audit trails are implemented and tested against a real broker API.
 
@@ -125,13 +125,25 @@ futures-bot kill-switch --state-file data/kill_switch.json --audit-log data/audi
 
 When `--state-file` is omitted, the command uses `KILL_SWITCH_STATE_PATH` and falls back to `data/kill_switch.json`. The command writes `kill_switch_activated` and `kill_switch_cleared` audit events without broker credentials or other secrets.
 
-Attempt reconciliation:
+Reconcile internal positions with the configured broker:
 
 ```powershell
-futures-bot reconcile
+futures-bot reconcile --broker tradestation --internal-positions data/internal_positions.json --audit-log data/audit.jsonl
+futures-bot reconcile --broker ibkr --internal-positions data/internal_positions.json --audit-log data/audit.jsonl
+futures-bot reconcile --broker ninjatrader --internal-positions data/internal_positions.json --audit-log data/audit.jsonl
+futures-bot reconcile --broker optimus --internal-positions data/internal_positions.json --audit-log data/audit.jsonl
 ```
 
-The current implementation reports that no live broker adapter is wired yet.
+The internal position snapshot is a JSON array:
+
+```json
+[
+  {"instrument_id": "ES-202609-CME", "quantity": 1, "average_price": "5000.25"},
+  {"instrument_id": "NQ-202609-CME", "quantity": -2, "average_price": "18000.50"}
+]
+```
+
+When `--internal-positions` is omitted, the command uses `INTERNAL_POSITIONS_PATH` and falls back to `data/internal_positions.json`. Missing or malformed internal state is treated as a configuration error. Position mismatches exit nonzero and record a `position_reconciliation` audit event.
 
 Attempt flatten:
 
@@ -181,6 +193,8 @@ Trading readiness can be evaluated through `futures_bot.application.trading_read
 Market data adapters can provide quotes through `futures_bot.ports.market_data.MarketDataPort`. `futures_bot.application.market_data.MarketDataSnapshotService` fetches `MarketSnapshot` values, rejects instrument mismatches before they enter risk checks, records successful quote snapshots, and records `market_data_snapshot_failed` events when adapters raise `MarketDataError`.
 
 Readiness-gated order entry should flow through `futures_bot.application.order_gateway.OrderGatewayService`. It can be configured with the persistent kill-switch store so an active operator halt blocks new broker handoff before risk evaluation or submission. If the configured kill-switch state cannot be loaded, the gateway fails closed with `kill_switch_state_unavailable`. It also refuses new orders when the latest readiness result is negative, writes an `order_submission_blocked` audit event with the block reason, and only then delegates ready orders into the audited submission service.
+
+Internal positions can be loaded with `futures_bot.storage.positions.JsonPositionStore` and compared against live broker positions through `futures_bot.application.reconciliation.ReconcilePositionsUseCase`. Reconciliation checks for broker positions missing internally, quantity differences, and nonzero internal positions missing at the broker before readiness is allowed to pass.
 
 Order activity can be tracked through `futures_bot.application.order_activity.OrderActivityTracker`. It records accepted broker submissions, rejects duplicate client order IDs, audits the recorded activity, and builds the `used_client_order_ids` and `recent_order_timestamps` inputs needed by pre-trade duplicate-ID and order-rate risk controls. For restart-safe live operation, back it with `futures_bot.storage.order_activity.JsonlOrderActivityStore` so accepted client order IDs are rehydrated before new order checks run.
 
