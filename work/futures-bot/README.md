@@ -2,7 +2,7 @@
 
 Production-oriented futures trading bot core.
 
-This project is being built safety-first. The current slice provides tested domain models, pre-trade risk controls, pre-broker risk decision auditing, broker connection lifecycle handling, broker-facing order submission orchestration, broker configuration validation, reconciliation logic, immutable audit events, durable JSONL audit and order-activity storage, and conservative operator CLI commands.
+This project is being built safety-first. The current slice provides tested domain models, pre-trade risk controls, pre-broker risk decision auditing, broker connection lifecycle handling, broker-facing order submission orchestration, broker configuration validation, an initial live-capable TradeStation HTTP adapter, reconciliation logic, immutable audit events, durable JSONL audit and order-activity storage, and conservative operator CLI commands.
 
 It does not yet submit live orders. That is intentional. Live order submission should only be added after broker connection lifecycle, order acknowledgement handling, fill handling, cancellation, reconciliation, and audit trails are implemented and tested against a real broker API.
 
@@ -53,6 +53,8 @@ TradeStation defaults:
 - Paper: `https://sim-api.tradestation.com/v3`
 - Live: `https://api.tradestation.com/v3`
 - Override with `TRADESTATION_BASE_URL` when routing through a controlled proxy.
+
+`futures_bot.brokers.tradestation.TradeStationBroker` implements the broker port with bearer-token HTTP calls against the configured paper or live TradeStation base URL. It validates the configured account, fetches balances and positions, submits approved orders, and requests order cancellation through the same application-layer risk, readiness, submission, cancellation, reconciliation, and audit services used by every broker.
 
 Required NinjaTrader environment variables:
 
