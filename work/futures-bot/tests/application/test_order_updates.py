@@ -86,6 +86,17 @@ def test_fill_update_accepts_optional_fill_price_for_position_accounting():
     assert update.fill_price == Decimal("5001.25")
 
 
+def test_fill_update_accepts_optional_execution_id_for_idempotency():
+    update = _update(
+        BrokerOrderUpdateType.FILL,
+        fill_quantity=1,
+        fill_price=Decimal("5001.25"),
+        broker_execution_id="exec-1",
+    )
+
+    assert update.broker_execution_id == "exec-1"
+
+
 def test_order_update_service_applies_position_ledger_when_configured_for_fill():
     audit_log = InMemoryAuditLog()
     position_ledger = RecordingPositionLedger()

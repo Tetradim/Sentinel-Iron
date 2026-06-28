@@ -17,22 +17,56 @@ class PositionStorePort(Protocol):
         """Persist current internal positions by instrument ID."""
 
 
+class ProcessedFillStorePort(Protocol):
+    def contains(self, broker_execution_id: str) -> bool:
+        """Return whether this broker execution ID was already applied."""
+
+    def append(self, broker_execution_id: str) -> None:
+        """Record one applied broker execution ID."""
+
+
 class PositionLedgerService:
-    def __init__(self, store: PositionStorePort, audit_log: AuditLogPort) -> None:
+    def __init__(
+        self,
+        store: PositionStorePort,
+        audit_log: AuditLogPort,
+        processed_fill_store: ProcessedFillStorePort | None = None,
+    ) -> None:
         self._store = store
         self._audit_log = audit_log
+        self._processed_fill_store = processed_fill_store
 
     def apply_fill(self, update: BrokerOrderUpdate, order_side: OrderSide) -> Position:
         if update.update_type != BrokerOrderUpdateType.FILL:
             raise ValueError("position ledger only applies fill updates")
         if update.fill_price is None:
             raise ValueError("fill_price is required")
+        if self._processed_fill_store is not None and update.broker_execution_id is None:
+            raise ValueError("broker_execution_id is required when processed fill store is configured")
 
         positions = dict(self._store.load())
         previous_position = positions.get(
             update.instrument_id,
             Position(update.instrument_id, 0, Decimal("0")),
         )
+        if (
+            self._processed_fill_store is not None
+            and update.broker_execution_id is not None
+            and self._processed_fill_store.contains(update.broker_execution_id)
+        ):
+            self._audit_log.append(
+                {
+                    "type": "position_ledger_fill_duplicate_ignored",
+                    "timestamp": update.timestamp.isoformat(),
+                    "account_id": update.account_id,
+                    "client_order_id": update.client_order_id,
+                    "broker_order_id": update.broker_order_id,
+                    "broker_execution_id": update.broker_execution_id,
+                    "instrument_id": update.instrument_id,
+                }
+            )
+            return previous_position
+
         updated_position = self._apply_fill_to_position(
             previous=previous_position,
             side=order_side,
@@ -41,6 +75,8 @@ class PositionLedgerService:
         )
         positions[update.instrument_id] = updated_position
         self._store.save(positions)
+        if self._processed_fill_store is not None and update.broker_execution_id is not None:
+            self._processed_fill_store.append(update.broker_execution_id)
 
         self._audit_log.append(
             {

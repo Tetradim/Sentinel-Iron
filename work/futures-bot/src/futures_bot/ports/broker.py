@@ -54,6 +54,7 @@ class BrokerOrderUpdate:
     timestamp: datetime
     fill_quantity: int = 0
     fill_price: Decimal | None = None
+    broker_execution_id: str | None = None
     reject_reason: str | None = None
     broker_error_code: str | None = None
 
@@ -76,6 +77,10 @@ class BrokerOrderUpdate:
             raise ValueError("fill_price must be positive")
         if self.update_type != BrokerOrderUpdateType.FILL and self.fill_price is not None:
             raise ValueError("fill_price is only valid for fill updates")
+        if self.broker_execution_id is not None and not self.broker_execution_id:
+            raise ValueError("broker_execution_id cannot be empty")
+        if self.update_type != BrokerOrderUpdateType.FILL and self.broker_execution_id is not None:
+            raise ValueError("broker_execution_id is only valid for fill updates")
         if self.update_type == BrokerOrderUpdateType.REJECTED and not self.reject_reason:
             raise ValueError("reject_reason is required for rejected updates")
 
