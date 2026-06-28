@@ -2,7 +2,12 @@ from datetime import datetime, timezone
 
 import pytest
 
-from futures_bot.ports.broker import BrokerOrderUpdate, BrokerOrderUpdateType, BrokerSubmissionError
+from futures_bot.ports.broker import (
+    BrokerCancellationError,
+    BrokerOrderUpdate,
+    BrokerOrderUpdateType,
+    BrokerSubmissionError,
+)
 
 
 def test_broker_submission_error_exposes_reason_and_error_code():
@@ -19,6 +24,22 @@ def test_broker_submission_error_exposes_reason_and_error_code():
 def test_broker_submission_error_requires_reason():
     with pytest.raises(ValueError, match="reason is required"):
         BrokerSubmissionError(reason="")
+
+
+def test_broker_cancellation_error_exposes_reason_and_error_code():
+    error = BrokerCancellationError(
+        reason="broker rejected cancel",
+        broker_error_code="TOO_LATE_TO_CANCEL",
+    )
+
+    assert str(error) == "broker rejected cancel"
+    assert error.reason == "broker rejected cancel"
+    assert error.broker_error_code == "TOO_LATE_TO_CANCEL"
+
+
+def test_broker_cancellation_error_requires_reason():
+    with pytest.raises(ValueError, match="reason is required"):
+        BrokerCancellationError(reason="")
 
 
 def test_broker_order_update_requires_positive_fill_quantity_for_fills():

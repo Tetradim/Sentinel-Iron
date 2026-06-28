@@ -18,6 +18,15 @@ class BrokerSubmissionError(RuntimeError):
         self.broker_error_code = broker_error_code
 
 
+class BrokerCancellationError(RuntimeError):
+    def __init__(self, reason: str, broker_error_code: str | None = None) -> None:
+        if not reason:
+            raise ValueError("reason is required")
+        super().__init__(reason)
+        self.reason = reason
+        self.broker_error_code = broker_error_code
+
+
 class BrokerOrderUpdateType(StrEnum):
     WORKING = "working"
     FILL = "fill"
