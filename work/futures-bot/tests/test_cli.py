@@ -151,6 +151,30 @@ class FakeBroker:
         raise NotImplementedError
 
 
+class FlattenBroker(FakeBroker):
+    def __init__(self) -> None:
+        super().__init__()
+        self.submitted_orders: list[BrokerOrder] = []
+
+    def get_positions(self) -> tuple[Position, ...]:
+        return (
+            Position(
+                instrument_id="@ESU26",
+                quantity=1,
+                average_price=Decimal("5000.25"),
+            ),
+            Position(
+                instrument_id="@NQU26",
+                quantity=-2,
+                average_price=Decimal("18000.25"),
+            ),
+        )
+
+    def submit_order(self, order: BrokerOrder) -> str:
+        self.submitted_orders.append(order)
+        return f"flatten-{len(self.submitted_orders)}"
+
+
 def test_broker_connect_uses_configured_broker_and_writes_audit_log(
     monkeypatch,
     tmp_path,
@@ -230,6 +254,42 @@ def test_flatten_command_refuses_without_explicit_confirmation_text(capsys):
     captured = capsys.readouterr()
     assert exit_code == 2
     assert "flatten requires --confirm FLATTEN-LIVE-POSITIONS" in captured.err
+
+
+def test_flatten_command_uses_configured_broker_and_writes_audit_log(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    _set_valid_tradestation_env(monkeypatch)
+    broker = FlattenBroker()
+
+    def create_fake_broker(name: str, env: object):
+        assert name == "tradestation"
+        return broker
+
+    monkeypatch.setattr("futures_bot.cli.create_broker", create_fake_broker)
+    audit_log_path = tmp_path / "audit" / "flatten.jsonl"
+
+    exit_code = main(
+        [
+            "flatten",
+            "--broker",
+            "tradestation",
+            "--audit-log",
+            str(audit_log_path),
+            "--confirm",
+            "FLATTEN-LIVE-POSITIONS",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert broker.connected is True
+    assert [order.side.value for order in broker.submitted_orders] == ["sell", "buy"]
+    assert [order.quantity for order in broker.submitted_orders] == [1, 2]
+    assert "flatten submitted: broker=tradestation submitted=2 failed=0 skipped=0" in captured.out
+    assert "position_flatten_completed" in audit_log_path.read_text(encoding="utf-8")
 
 
 def test_kill_switch_status_reports_inactive_when_state_file_is_missing(tmp_path, capsys):

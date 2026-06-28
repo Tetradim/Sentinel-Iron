@@ -2,9 +2,9 @@
 
 Production-oriented futures trading bot core.
 
-This project is being built safety-first. The current slice provides tested domain models, pre-trade risk controls, pre-broker risk decision auditing, broker connection lifecycle handling, broker-facing order submission orchestration, broker configuration validation, live-capable TradeStation, NinjaTrader, IBKR, and Optimus broker adapter boundaries, reconciliation logic, immutable audit events, durable JSONL audit, order-activity, and kill-switch storage, and conservative operator CLI commands.
+This project is being built safety-first. The current slice provides tested domain models, pre-trade risk controls, pre-broker risk decision auditing, broker connection lifecycle handling, broker-facing order submission orchestration, broker configuration validation, live-capable TradeStation, NinjaTrader, IBKR, and Optimus broker adapter boundaries, reconciliation logic, immutable audit events, durable JSONL audit, order-activity, and kill-switch storage, confirmed emergency position flattening, and conservative operator CLI commands.
 
-It does not yet submit live orders. That is intentional. Live order submission should only be added after broker connection lifecycle, order acknowledgement handling, fill handling, cancellation, reconciliation, and audit trails are implemented and tested against a real broker API.
+It does not yet run autonomous strategy-driven live order entry. The current live-capable order submission surface is the explicit operator-confirmed emergency flatten command. Strategy-driven live order loops should only be added after broker connection lifecycle, order acknowledgement handling, fill handling, cancellation, reconciliation, persistent safety state, and audit trails are implemented and tested against a real broker API.
 
 ## Install
 
@@ -136,10 +136,13 @@ The current implementation reports that no live broker adapter is wired yet.
 Attempt flatten:
 
 ```powershell
-futures-bot flatten --confirm FLATTEN-LIVE-POSITIONS
+futures-bot flatten --broker tradestation --audit-log data/audit.jsonl --confirm FLATTEN-LIVE-POSITIONS
+futures-bot flatten --broker ibkr --audit-log data/audit.jsonl --confirm FLATTEN-LIVE-POSITIONS
+futures-bot flatten --broker ninjatrader --audit-log data/audit.jsonl --confirm FLATTEN-LIVE-POSITIONS
+futures-bot flatten --broker optimus --audit-log data/audit.jsonl --confirm FLATTEN-LIVE-POSITIONS
 ```
 
-The command requires explicit confirmation text and still refuses to submit orders until a live broker adapter is wired.
+The command requires exact explicit confirmation text. After confirmation, it connects to the selected real broker environment, fetches current broker positions, skips flat positions, submits opposite-side market orders for nonzero positions, and writes `position_flatten_started`, `position_flatten_order_submitted`, `position_flatten_order_failed`, and `position_flatten_completed` audit events. If any flatten order is rejected synchronously by the broker or route, the command continues through remaining positions and exits nonzero after recording the failure.
 
 ## Current Safety Controls
 
@@ -186,6 +189,8 @@ Approved order intents can be submitted through `futures_bot.application.order_s
 Broker adapters should raise `futures_bot.ports.broker.BrokerSubmissionError` when the broker, exchange, or route rejects a submitted order synchronously. The submission service records a rejected lifecycle with the broker reason and optional broker error code instead of leaving the order in an ambiguous pending state.
 
 Open order cancels can be requested through `futures_bot.application.order_cancellation.OrderCancellationService`. It validates the order lifecycle can move to pending cancel, calls the configured broker adapter, records `order_cancel_requested` audit events for accepted cancel requests, and records `order_cancel_failed` events when adapters raise `futures_bot.ports.broker.BrokerCancellationError`.
+
+Emergency position flattening can be run through `futures_bot.application.position_flattening.PositionFlatteningService`. It connects to the broker, reads the broker account and current positions, converts long positions into sell market orders and short positions into buy market orders, skips zero-quantity positions, records each submitted or failed flatten request, and records a completion summary. This path is intentionally separate from strategy order entry because it is an operator-confirmed risk-reduction command.
 
 Broker adapters can publish order acknowledgements, fills, cancellations, and asynchronous rejects as `futures_bot.ports.broker.BrokerOrderUpdate` values. `futures_bot.application.order_updates.OrderUpdateService` applies those updates to `OrderLifecycle` and appends `order_update_applied` audit events with account ID, client order ID, broker order ID, instrument ID, update type, resulting status, incremental fill quantity, cumulative filled quantity, reject reason, and broker error code.
 

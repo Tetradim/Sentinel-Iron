@@ -12,6 +12,7 @@ from futures_bot.application.broker_connection import (
     BrokerConnectionService,
 )
 from futures_bot.application.kill_switch import KillSwitchService
+from futures_bot.application.position_flattening import PositionFlatteningService
 from futures_bot.brokers.factory import create_broker
 from futures_bot.brokers.ibkr.config import load_ibkr_config
 from futures_bot.brokers.ninjatrader.config import load_ninjatrader_config
@@ -41,7 +42,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "reconcile":
         return _reconcile()
     if args.command == "flatten":
-        return _flatten(args.confirm)
+        return _flatten(args.confirm, args.broker, args.audit_log)
 
     parser.print_help(sys.stderr)
     return 2
@@ -101,6 +102,16 @@ def _build_parser() -> argparse.ArgumentParser:
     kill_switch_subparsers.add_parser("clear", help="Clear the kill switch.")
 
     flatten = subparsers.add_parser("flatten", help="Flatten live broker positions.")
+    flatten.add_argument(
+        "--broker",
+        default=None,
+        help="Broker to flatten through. Defaults to BROKER or tradestation.",
+    )
+    flatten.add_argument(
+        "--audit-log",
+        default=os.environ.get("AUDIT_LOG_PATH", "data/audit.jsonl"),
+        help="JSONL audit log path. Defaults to AUDIT_LOG_PATH or data/audit.jsonl.",
+    )
     flatten.add_argument("--confirm", default="", help=f"Must equal {FLATTEN_CONFIRMATION}.")
 
     return parser
@@ -230,12 +241,35 @@ def _reconcile() -> int:
     return 1
 
 
-def _flatten(confirm: str) -> int:
+def _flatten(confirm: str, broker: str | None, audit_log_path: str) -> int:
     if confirm != FLATTEN_CONFIRMATION:
         print(f"flatten requires --confirm {FLATTEN_CONFIRMATION}", file=sys.stderr)
         return 2
-    print("No live broker adapter is wired for flatten yet.", file=sys.stderr)
-    return 1
+    selected_broker = (broker or os.environ.get("BROKER") or "tradestation").strip().lower()
+    try:
+        configured_broker = create_broker(selected_broker, os.environ)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    service = PositionFlatteningService(
+        broker=configured_broker,
+        audit_log=JsonlAuditLog(Path(audit_log_path)),
+    )
+    try:
+        result = service.flatten(timestamp=datetime.now(timezone.utc))
+    except Exception as exc:
+        print(f"flatten failed: {exc}", file=sys.stderr)
+        return 1
+
+    print(
+        "flatten submitted: "
+        f"broker={selected_broker} "
+        f"submitted={result.submitted_count} "
+        f"failed={result.failed_count} "
+        f"skipped={result.skipped_count}"
+    )
+    return 0 if result.failed_count == 0 else 1
 
 
 if __name__ == "__main__":
