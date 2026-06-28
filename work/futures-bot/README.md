@@ -116,6 +116,7 @@ The pre-trade risk engine rejects orders when:
 - positions are not reconciled
 - account data is stale
 - market data is stale
+- order intent, market snapshot, position, and risk context instrument IDs do not match
 - order quantity exceeds the configured limit
 - market quote is not two-sided
 - market quote is crossed

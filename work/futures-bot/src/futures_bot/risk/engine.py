@@ -106,6 +106,10 @@ class RiskEngine:
         if context.now - context.market.timestamp > self._limits.market_data_stale_after:
             return RiskDecision.reject(RiskReason.STALE_MARKET_DATA, "market data is stale")
 
+        instrument_decision = self._evaluate_instrument_consistency(intent, context)
+        if not instrument_decision.approved:
+            return instrument_decision
+
         if context.realized_pnl_today <= -self._limits.max_daily_loss:
             return RiskDecision.reject(RiskReason.MAX_DAILY_LOSS, "realized daily loss limit reached")
 
@@ -164,6 +168,25 @@ class RiskEngine:
 
     def _notional(self, quantity: int, price: Decimal, instrument: FuturesInstrument) -> Decimal:
         return Decimal(quantity) * price * instrument.spec.multiplier
+
+    def _evaluate_instrument_consistency(self, intent: OrderIntent, context: RiskContext) -> RiskDecision:
+        instrument_id = context.instrument.instrument_id
+        if intent.instrument_id != instrument_id:
+            return RiskDecision.reject(
+                RiskReason.INSTRUMENT_MISMATCH,
+                "order intent instrument does not match risk context instrument",
+            )
+        if context.market.instrument_id != instrument_id:
+            return RiskDecision.reject(
+                RiskReason.INSTRUMENT_MISMATCH,
+                "market snapshot instrument does not match risk context instrument",
+            )
+        if context.current_position.instrument_id != instrument_id:
+            return RiskDecision.reject(
+                RiskReason.INSTRUMENT_MISMATCH,
+                "position instrument does not match risk context instrument",
+            )
+        return RiskDecision.approve()
 
     def _recent_order_count(self, context: RiskContext) -> int:
         return sum(

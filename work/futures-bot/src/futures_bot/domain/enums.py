@@ -21,6 +21,7 @@ class RiskReason(StrEnum):
     UNRECONCILED_POSITIONS = "unreconciled_positions"
     STALE_ACCOUNT = "stale_account"
     STALE_MARKET_DATA = "stale_market_data"
+    INSTRUMENT_MISMATCH = "instrument_mismatch"
     MARKET_NOT_TWO_SIDED = "market_not_two_sided"
     CROSSED_MARKET = "crossed_market"
     WIDE_BID_ASK_SPREAD = "wide_bid_ask_spread"

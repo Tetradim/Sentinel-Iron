@@ -131,6 +131,41 @@ def test_risk_engine_rejects_stale_market_data():
     assert decision.reason == RiskReason.STALE_MARKET_DATA
 
 
+def test_risk_engine_rejects_intent_for_different_instrument():
+    decision = RiskEngine(_limits()).evaluate(
+        replace(_intent(), instrument_id="NQ-202609-CME"),
+        _context(),
+    )
+
+    assert decision.approved is False
+    assert decision.reason == RiskReason.INSTRUMENT_MISMATCH
+    assert decision.detail == "order intent instrument does not match risk context instrument"
+
+
+def test_risk_engine_rejects_market_snapshot_for_different_instrument():
+    market = replace(_context().market, instrument_id="NQ-202609-CME")
+
+    decision = RiskEngine(_limits()).evaluate(_intent(), _context(market=market))
+
+    assert decision.approved is False
+    assert decision.reason == RiskReason.INSTRUMENT_MISMATCH
+    assert decision.detail == "market snapshot instrument does not match risk context instrument"
+
+
+def test_risk_engine_rejects_position_for_different_instrument():
+    position = Position(
+        instrument_id="NQ-202609-CME",
+        quantity=0,
+        average_price=Decimal("0"),
+    )
+
+    decision = RiskEngine(_limits()).evaluate(_intent(), _context(current_position=position))
+
+    assert decision.approved is False
+    assert decision.reason == RiskReason.INSTRUMENT_MISMATCH
+    assert decision.detail == "position instrument does not match risk context instrument"
+
+
 def test_risk_engine_rejects_max_order_quantity_breach():
     decision = RiskEngine(_limits()).evaluate(_intent(quantity=6), _context())
 
