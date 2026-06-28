@@ -14,6 +14,16 @@ def _tradestation_env() -> dict[str, str]:
     }
 
 
+def _ninjatrader_env() -> dict[str, str]:
+    return {
+        "BROKER_ENV": "paper",
+        "NINJATRADER_REST_URL": "https://nt-api.example.test/v1/api",
+        "NINJATRADER_WS_URL": "wss://nt-stream.example.test/v1/ws",
+        "NINJATRADER_ACCESS_TOKEN": "secret-token",
+        "NINJATRADER_ACCOUNT_ID": "Sim101",
+    }
+
+
 def test_create_broker_returns_tradestation_adapter_from_environment():
     from futures_bot.brokers.factory import create_broker
 
@@ -68,6 +78,18 @@ def test_create_broker_returns_ibkr_adapter_from_environment_with_injected_clien
     assert broker.config.port == 7497
     assert broker.config.client_id == 101
     assert broker.client is client
+
+
+def test_create_broker_returns_ninjatrader_adapter_from_environment():
+    from futures_bot.brokers.factory import create_broker
+    from futures_bot.brokers.ninjatrader import NinjaTraderBroker
+
+    broker = create_broker("ninjatrader", _ninjatrader_env())
+
+    assert isinstance(broker, NinjaTraderBroker)
+    assert broker.config.rest_url == "https://nt-api.example.test/v1/api"
+    assert broker.config.websocket_url == "wss://nt-stream.example.test/v1/ws"
+    assert broker.config.account_id == "Sim101"
 
 
 def test_create_broker_rejects_unknown_broker():

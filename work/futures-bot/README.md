@@ -2,7 +2,7 @@
 
 Production-oriented futures trading bot core.
 
-This project is being built safety-first. The current slice provides tested domain models, pre-trade risk controls, pre-broker risk decision auditing, broker connection lifecycle handling, broker-facing order submission orchestration, broker configuration validation, an initial live-capable TradeStation HTTP adapter, an IBKR broker-port adapter boundary for TWS or IB Gateway clients, reconciliation logic, immutable audit events, durable JSONL audit and order-activity storage, and conservative operator CLI commands.
+This project is being built safety-first. The current slice provides tested domain models, pre-trade risk controls, pre-broker risk decision auditing, broker connection lifecycle handling, broker-facing order submission orchestration, broker configuration validation, initial live-capable TradeStation and NinjaTrader HTTP adapters, an IBKR broker-port adapter boundary for TWS or IB Gateway clients, reconciliation logic, immutable audit events, durable JSONL audit and order-activity storage, and conservative operator CLI commands.
 
 It does not yet submit live orders. That is intentional. Live order submission should only be added after broker connection lifecycle, order acknowledgement handling, fill handling, cancellation, reconciliation, and audit trails are implemented and tested against a real broker API.
 
@@ -74,7 +74,7 @@ $env:NINJATRADER_ACCESS_TOKEN = "..."
 $env:NINJATRADER_ACCOUNT_ID = "SIM12345"
 ```
 
-NinjaTrader REST and WebSocket URLs are explicit because deployments and broker access paths can differ.
+NinjaTrader REST and WebSocket URLs are explicit because deployments and broker access paths can differ. `futures_bot.brokers.ninjatrader.NinjaTraderBroker` implements the broker port with bearer-token HTTP calls against the configured REST URL. It validates the configured account, fetches account and position state, submits approved orders, and requests order cancellation through the same application-layer risk, readiness, submission, cancellation, reconciliation, and audit services used by every broker.
 
 Required Optimus Futures environment variables:
 
@@ -109,9 +109,10 @@ $env:BROKER = "tradestation"
 $env:BROKER_ENV = "paper"
 futures-bot broker-connect --broker tradestation --audit-log data/audit.jsonl
 futures-bot broker-connect --broker ibkr --audit-log data/audit.jsonl
+futures-bot broker-connect --broker ninjatrader --audit-log data/audit.jsonl
 ```
 
-`broker-connect` currently supports TradeStation and IBKR. TradeStation uses the configured paper or live HTTP base URL. IBKR uses TWS or IB Gateway through the optional `ibapi` transport. Both paths validate broker connectivity, fetch account and position state, write the broker connection audit event to the JSONL audit log, and never submit or cancel orders.
+`broker-connect` currently supports TradeStation, IBKR, and NinjaTrader. TradeStation and NinjaTrader use their configured paper or live HTTP base URLs. IBKR uses TWS or IB Gateway through the optional `ibapi` transport. These paths validate broker connectivity, fetch account and position state, write the broker connection audit event to the JSONL audit log, and never submit or cancel orders.
 
 Attempt reconciliation:
 
@@ -183,8 +184,7 @@ Accepted broker order activity can be persisted with `futures_bot.storage.order_
 
 Broker adapter implementation order:
 
-1. NinjaTrader
-2. Optimus Futures through the selected route, such as Rithmic, CQG, Trading Technologies, CTS, or Firetip
+1. Optimus Futures through the selected route, such as Rithmic, CQG, Trading Technologies, CTS, or Firetip
 
 Each adapter must implement the same broker port and must not leak broker SDK types into the domain or application layers.
 
