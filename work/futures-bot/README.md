@@ -2,7 +2,7 @@
 
 Production-oriented futures trading bot core.
 
-This project is being built safety-first. The current slice provides tested domain models, pre-trade risk controls, pre-broker risk decision auditing, broker connection lifecycle handling, broker-facing order submission orchestration, broker configuration validation, an initial live-capable TradeStation HTTP adapter, reconciliation logic, immutable audit events, durable JSONL audit and order-activity storage, and conservative operator CLI commands.
+This project is being built safety-first. The current slice provides tested domain models, pre-trade risk controls, pre-broker risk decision auditing, broker connection lifecycle handling, broker-facing order submission orchestration, broker configuration validation, an initial live-capable TradeStation HTTP adapter, an IBKR broker-port adapter boundary for TWS or IB Gateway clients, reconciliation logic, immutable audit events, durable JSONL audit and order-activity storage, and conservative operator CLI commands.
 
 It does not yet submit live orders. That is intentional. Live order submission should only be added after broker connection lifecycle, order acknowledgement handling, fill handling, cancellation, reconciliation, and audit trails are implemented and tested against a real broker API.
 
@@ -39,6 +39,8 @@ Common IBKR defaults:
 - TWS paper: `7497`
 - TWS live: `7496`
 - IB Gateway paper/live ports depend on local gateway configuration
+
+`futures_bot.brokers.ibkr.IbkrBroker` implements the broker port around a TWS or IB Gateway client contract. It maps IBKR account summary rows, position rows, next-valid order IDs, futures contracts, order payloads, and cancel requests into the shared broker port. The CLI factory does not yet auto-create an IBKR event-loop client; that concrete TWS client transport is the next IBKR wiring step.
 
 Required TradeStation environment variables:
 
@@ -174,10 +176,9 @@ Accepted broker order activity can be persisted with `futures_bot.storage.order_
 
 Broker adapter implementation order:
 
-1. IBKR via TWS or IB Gateway
-2. TradeStation
-3. NinjaTrader
-4. Optimus Futures through the selected route, such as Rithmic, CQG, Trading Technologies, CTS, or Firetip
+1. IBKR concrete TWS or IB Gateway client transport
+2. NinjaTrader
+3. Optimus Futures through the selected route, such as Rithmic, CQG, Trading Technologies, CTS, or Firetip
 
 Each adapter must implement the same broker port and must not leak broker SDK types into the domain or application layers.
 

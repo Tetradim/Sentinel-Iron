@@ -23,10 +23,10 @@ def test_create_broker_returns_tradestation_adapter_from_environment():
     assert broker.config.account_id == "SIM12345"
 
 
-def test_create_broker_rejects_unsupported_brokers_without_placeholders():
+def test_create_broker_rejects_ibkr_until_tws_client_factory_is_wired():
     from futures_bot.brokers.factory import create_broker
 
-    with pytest.raises(ValueError, match="ibkr broker adapter is not implemented yet"):
+    with pytest.raises(ValueError, match="ibkr broker adapter requires a TWS client implementation"):
         create_broker(
             "ibkr",
             {

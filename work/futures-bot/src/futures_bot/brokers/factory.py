@@ -10,6 +10,8 @@ def create_broker(name: str, env: Mapping[str, str]) -> BrokerPort:
     broker_name = name.strip().lower()
     if broker_name == "tradestation":
         return TradeStationBroker(load_tradestation_config(env))
-    if broker_name in {"ibkr", "ninjatrader", "optimus"}:
+    if broker_name == "ibkr":
+        raise ValueError("ibkr broker adapter requires a TWS client implementation")
+    if broker_name in {"ninjatrader", "optimus"}:
         raise ValueError(f"{broker_name} broker adapter is not implemented yet")
     raise ValueError(f"unsupported broker: {broker_name}")
