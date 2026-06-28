@@ -136,7 +136,9 @@ The pre-trade risk engine rejects orders when:
 
 Pre-trade risk checks can be run through `futures_bot.application.risk_check.RiskCheckService`. It returns the same `RiskDecision` as the risk engine and appends a `risk_decision` audit event with timestamp, account ID, client order ID, instrument ID, side, quantity, order type, limit price, approval status, rejection reason, and detail before broker submission.
 
-Approved order intents can be submitted through `futures_bot.application.order_submission.OrderSubmissionService`. It always runs the audited risk check first, blocks rejected orders before the broker port is called, converts approved intents into `BrokerOrder` values, submits them through the configured broker adapter, and audits both blocked and submitted handoffs.
+Approved order intents can be submitted through `futures_bot.application.order_submission.OrderSubmissionService`. It always runs the audited risk check first, blocks rejected orders before the broker port is called, converts approved intents into `BrokerOrder` values, submits them through the configured broker adapter, and audits blocked, submitted, and broker-rejected handoffs.
+
+Broker adapters should raise `futures_bot.ports.broker.BrokerSubmissionError` when the broker, exchange, or route rejects a submitted order synchronously. The submission service records a rejected lifecycle with the broker reason and optional broker error code instead of leaving the order in an ambiguous pending state.
 
 Audit events can be persisted with `futures_bot.storage.audit.JsonlAuditLog`. It appends one JSON object per line, creates parent directories when needed, stores a copy of each event, and replays immutable event snapshots for diagnostics.
 

@@ -6,7 +6,7 @@ from futures_bot.application.risk_check import RiskCheckService
 from futures_bot.domain.order_lifecycle import OrderLifecycle
 from futures_bot.domain.orders import BrokerOrder, OrderIntent
 from futures_bot.ports.audit import AuditLogPort
-from futures_bot.ports.broker import BrokerPort
+from futures_bot.ports.broker import BrokerPort, BrokerSubmissionError
 from futures_bot.risk.engine import RiskContext, RiskDecision
 
 
@@ -53,7 +53,29 @@ class OrderSubmissionService:
             )
 
         broker_order = BrokerOrder.from_intent(intent)
-        broker_order_id = self._broker.submit_order(broker_order)
+        try:
+            broker_order_id = self._broker.submit_order(broker_order)
+        except BrokerSubmissionError as exc:
+            rejected = lifecycle.mark_rejected(exc.reason)
+            self._audit_log.append(
+                {
+                    "type": "order_submission_failed",
+                    "timestamp": context.now.isoformat(),
+                    "account_id": context.account.account_id,
+                    "client_order_id": intent.client_order_id,
+                    "instrument_id": intent.instrument_id,
+                    "status": rejected.status.value,
+                    "reason": "broker_submission_error",
+                    "detail": exc.reason,
+                    "broker_error_code": exc.broker_error_code,
+                }
+            )
+            return OrderSubmissionResult(
+                risk_decision=risk_decision,
+                lifecycle=rejected,
+                broker_order_id=None,
+            )
+
         working = lifecycle.mark_working()
         self._audit_log.append(
             {

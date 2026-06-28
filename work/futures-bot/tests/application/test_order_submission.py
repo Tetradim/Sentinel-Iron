@@ -10,6 +10,7 @@ from futures_bot.domain.order_lifecycle import OrderLifecycleStatus
 from futures_bot.domain.orders import BrokerOrder, OrderIntent
 from futures_bot.domain.portfolio import AccountSnapshot, MarketSnapshot, Position
 from futures_bot.ports.audit import InMemoryAuditLog
+from futures_bot.ports.broker import BrokerSubmissionError
 from futures_bot.risk.engine import RiskContext, RiskEngine, RiskLimits
 
 
@@ -36,6 +37,15 @@ class RecordingBroker:
 
     def cancel_order(self, broker_order_id: str) -> None:
         raise NotImplementedError
+
+
+class RejectingBroker(RecordingBroker):
+    def submit_order(self, order: BrokerOrder) -> str:
+        self.submitted_orders.append(order)
+        raise BrokerSubmissionError(
+            reason="exchange rejected order: price band exceeded",
+            broker_error_code="PRICE_BAND",
+        )
 
 
 def _instrument() -> FuturesInstrument:
@@ -175,4 +185,33 @@ def test_order_submission_blocks_rejected_order_before_broker_handoff():
         "status": "rejected",
         "reason": "duplicate_client_order_id",
         "detail": "client order ID was already used",
+    }
+
+
+def test_order_submission_marks_lifecycle_rejected_when_broker_submission_fails():
+    audit_log = InMemoryAuditLog()
+    broker = RejectingBroker()
+    service = OrderSubmissionService(
+        risk_check=RiskCheckService(RiskEngine(_limits()), audit_log),
+        broker=broker,
+        audit_log=audit_log,
+    )
+
+    result = service.submit(_intent(), _context())
+
+    assert result.risk_decision.approved is True
+    assert result.lifecycle.status == OrderLifecycleStatus.REJECTED
+    assert result.lifecycle.reject_reason == "exchange rejected order: price band exceeded"
+    assert result.broker_order_id is None
+    assert broker.submitted_orders == [BrokerOrder.from_intent(_intent())]
+    assert audit_log.events[-1] == {
+        "type": "order_submission_failed",
+        "timestamp": "2026-06-28T14:30:00+00:00",
+        "account_id": "acct-1",
+        "client_order_id": "order-1",
+        "instrument_id": "ES-202609-CME",
+        "status": "rejected",
+        "reason": "broker_submission_error",
+        "detail": "exchange rejected order: price band exceeded",
+        "broker_error_code": "PRICE_BAND",
     }
