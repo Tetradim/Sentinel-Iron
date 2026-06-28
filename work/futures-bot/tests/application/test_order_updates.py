@@ -2,12 +2,21 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from futures_bot.application.order_updates import OrderUpdateService
+from futures_bot.domain.enums import OrderSide
 from futures_bot.domain.order_lifecycle import OrderLifecycle, OrderLifecycleStatus
 from futures_bot.ports.audit import InMemoryAuditLog
 from futures_bot.ports.broker import BrokerOrderUpdate, BrokerOrderUpdateType
 
 
 NOW = datetime(2026, 6, 28, 14, 31, tzinfo=timezone.utc)
+
+
+class RecordingPositionLedger:
+    def __init__(self) -> None:
+        self.applied_fills: list[tuple[BrokerOrderUpdate, OrderSide]] = []
+
+    def apply_fill(self, update: BrokerOrderUpdate, order_side: OrderSide) -> None:
+        self.applied_fills.append((update, order_side))
 
 
 def _update(update_type: BrokerOrderUpdateType, **overrides: object) -> BrokerOrderUpdate:
@@ -75,6 +84,54 @@ def test_fill_update_accepts_optional_fill_price_for_position_accounting():
     update = _update(BrokerOrderUpdateType.FILL, fill_quantity=1, fill_price=Decimal("5001.25"))
 
     assert update.fill_price == Decimal("5001.25")
+
+
+def test_order_update_service_applies_position_ledger_when_configured_for_fill():
+    audit_log = InMemoryAuditLog()
+    position_ledger = RecordingPositionLedger()
+    service = OrderUpdateService(audit_log, position_ledger=position_ledger)
+    lifecycle = OrderLifecycle.pending_submit(client_order_id="order-1").mark_working()
+    fill_update = _update(
+        BrokerOrderUpdateType.FILL,
+        fill_quantity=2,
+        fill_price=Decimal("5001.25"),
+    )
+
+    updated = service.apply(
+        lifecycle=lifecycle,
+        update=fill_update,
+        order_quantity=5,
+        order_side=OrderSide.BUY,
+    )
+
+    assert updated.status == OrderLifecycleStatus.PARTIALLY_FILLED
+    assert position_ledger.applied_fills == [(fill_update, OrderSide.BUY)]
+    assert audit_log.events[-1]["update_type"] == "fill"
+
+
+def test_order_update_service_requires_order_side_for_position_ledger_fills():
+    audit_log = InMemoryAuditLog()
+    position_ledger = RecordingPositionLedger()
+    service = OrderUpdateService(audit_log, position_ledger=position_ledger)
+    lifecycle = OrderLifecycle.pending_submit(client_order_id="order-1").mark_working()
+
+    try:
+        service.apply(
+            lifecycle=lifecycle,
+            update=_update(
+                BrokerOrderUpdateType.FILL,
+                fill_quantity=1,
+                fill_price=Decimal("5001.25"),
+            ),
+            order_quantity=5,
+        )
+    except ValueError as exc:
+        assert str(exc) == "order_side is required when position ledger is configured"
+    else:
+        raise AssertionError("expected missing order side to be rejected")
+
+    assert position_ledger.applied_fills == []
+    assert audit_log.events == ()
 
 
 def test_order_update_service_marks_working_order_rejected_and_audits_reason():
