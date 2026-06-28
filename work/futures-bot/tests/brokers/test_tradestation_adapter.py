@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Mapping
 
@@ -12,6 +12,7 @@ from futures_bot.brokers.tradestation.config import BrokerEnvironment, TradeStat
 from futures_bot.domain.enums import OrderSide, OrderType
 from futures_bot.domain.orders import BrokerOrder
 from futures_bot.ports.broker import BrokerCancellationError, BrokerConnectionError, BrokerSubmissionError
+from futures_bot.ports.market_data import HistoricalBar, MarketDataError
 
 
 NOW = datetime(2026, 6, 28, 15, 30, tzinfo=timezone.utc)
@@ -320,6 +321,99 @@ def test_tradestation_adapter_maps_margin_confirmation_http_errors():
 
     assert exc_info.value.reason == "order confirmation failed"
     assert exc_info.value.broker_error_code == "InvalidOrder"
+
+
+def test_tradestation_get_daily_bars_requests_barcharts_endpoint_and_maps_payload():
+    transport = RecordingTransport(
+        (
+            {
+                "Bars": [
+                    {
+                        "TimeStamp": "2026-09-13T00:00:00Z",
+                        "Open": "5000.00",
+                        "High": "5010.00",
+                        "Low": "4995.00",
+                        "Close": "5005.00",
+                        "TotalVolume": "12345",
+                    },
+                    {
+                        "Date": "2026-09-14",
+                        "Open": "5005.00",
+                        "High": "5020.00",
+                        "Low": "5000.00",
+                        "Close": "5015.00",
+                        "Volume": "23456",
+                    },
+                ]
+            },
+        )
+    )
+    broker = _adapter(transport)
+
+    bars = broker.get_daily_bars(
+        "@ESU26",
+        start_day=date(2026, 9, 13),
+        end_day=date(2026, 9, 14),
+    )
+
+    assert bars == (
+        HistoricalBar(
+            instrument_id="@ESU26",
+            day=date(2026, 9, 13),
+            open=Decimal("5000.00"),
+            high=Decimal("5010.00"),
+            low=Decimal("4995.00"),
+            close=Decimal("5005.00"),
+            volume=12345,
+        ),
+        HistoricalBar(
+            instrument_id="@ESU26",
+            day=date(2026, 9, 14),
+            open=Decimal("5005.00"),
+            high=Decimal("5020.00"),
+            low=Decimal("5000.00"),
+            close=Decimal("5015.00"),
+            volume=23456,
+        ),
+    )
+    assert transport.requests == [
+        {
+            "method": "GET",
+            "url": (
+                "https://sim-api.tradestation.com/v3/marketdata/barcharts/%40ESU26"
+                "?unit=Daily&firstdate=2026-09-13&lastdate=2026-09-14"
+            ),
+            "headers": {"Authorization": "Bearer token-123", "Content-Type": "application/json"},
+            "body": None,
+        }
+    ]
+
+
+def test_tradestation_get_daily_bars_maps_http_errors_to_market_data_error():
+    transport = FailingTransport("historical data permission denied", 403, "Forbidden")
+    broker = _adapter(transport)
+
+    with pytest.raises(MarketDataError) as exc_info:
+        broker.get_daily_bars(
+            "@ESU26",
+            start_day=date(2026, 9, 13),
+            end_day=date(2026, 9, 14),
+        )
+
+    assert exc_info.value.reason == "historical data permission denied"
+    assert exc_info.value.provider_error_code == "Forbidden"
+
+
+def test_tradestation_get_daily_bars_rejects_invalid_payload():
+    transport = RecordingTransport(({"Bars": {"TimeStamp": "2026-09-13"}},))
+    broker = _adapter(transport)
+
+    with pytest.raises(MarketDataError, match="TradeStation barcharts response was invalid"):
+        broker.get_daily_bars(
+            "@ESU26",
+            start_day=date(2026, 9, 13),
+            end_day=date(2026, 9, 14),
+        )
 
 
 def test_tradestation_cancel_order_uses_delete_endpoint():

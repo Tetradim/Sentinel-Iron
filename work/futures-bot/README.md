@@ -62,7 +62,7 @@ TradeStation defaults:
 - Live: `https://api.tradestation.com/v3`
 - Override with `TRADESTATION_BASE_URL` when routing through a controlled proxy.
 
-`futures_bot.brokers.tradestation.TradeStationBroker` implements the broker port with bearer-token HTTP calls against the configured paper or live TradeStation base URL. It validates the configured account, fetches balances and positions, submits approved orders, and requests order cancellation through the same application-layer risk, readiness, submission, cancellation, reconciliation, and audit services used by every broker.
+`futures_bot.brokers.tradestation.TradeStationBroker` implements the broker port with bearer-token HTTP calls against the configured paper or live TradeStation base URL. It validates the configured account, fetches balances and positions, submits approved orders, requests order cancellation, and fetches normalized daily historical bars through TradeStation barcharts using the same application-layer risk, readiness, submission, cancellation, reconciliation, market-data, and audit services used by every broker.
 
 Required NinjaTrader environment variables:
 

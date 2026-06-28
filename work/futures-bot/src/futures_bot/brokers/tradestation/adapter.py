@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Protocol
+from urllib.parse import quote, urlencode
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -20,6 +21,7 @@ from futures_bot.ports.broker import (
     BrokerConnectionError,
     BrokerSubmissionError,
 )
+from futures_bot.ports.market_data import HistoricalBar, MarketDataError
 
 
 class TradeStationHttpError(RuntimeError):
@@ -173,6 +175,38 @@ class TradeStationBroker:
             raise MarginEstimateUnavailable(exc.reason, exc.broker_error_code) from exc
         except ValueError as exc:
             raise MarginEstimateUnavailable(str(exc)) from exc
+
+    def get_daily_bars(
+        self,
+        instrument_id: str,
+        start_day: date,
+        end_day: date,
+    ) -> tuple[HistoricalBar, ...]:
+        if not instrument_id:
+            raise ValueError("instrument_id is required")
+        if start_day > end_day:
+            raise ValueError("start_day cannot be after end_day")
+
+        query = urlencode(
+            (
+                ("unit", "Daily"),
+                ("firstdate", start_day.isoformat()),
+                ("lastdate", end_day.isoformat()),
+            )
+        )
+        try:
+            payload = self._request(
+                "GET",
+                f"/marketdata/barcharts/{quote(instrument_id, safe='')}?{query}",
+            )
+            bars = payload.get("Bars")
+            if not isinstance(bars, list):
+                raise ValueError("TradeStation barcharts response was invalid")
+            return tuple(_historical_bar(instrument_id, bar) for bar in bars)
+        except TradeStationHttpError as exc:
+            raise MarketDataError(exc.reason, exc.broker_error_code) from exc
+        except ValueError as exc:
+            raise MarketDataError(str(exc)) from exc
 
     def cancel_order(self, broker_order_id: str) -> None:
         if not broker_order_id:
@@ -335,6 +369,43 @@ def _margin_estimate(payload: Mapping[str, object]) -> MarginEstimate:
         initial_margin=initial_margin,
         maintenance_margin=maintenance_margin,
     )
+
+
+def _historical_bar(requested_instrument_id: str, value: object) -> HistoricalBar:
+    if not isinstance(value, Mapping):
+        raise ValueError("TradeStation bar record was invalid")
+
+    return HistoricalBar(
+        instrument_id=_optional_text(value, "Symbol") or requested_instrument_id,
+        day=_bar_day(value),
+        open=_required_decimal(value, "Open"),
+        high=_required_decimal(value, "High"),
+        low=_required_decimal(value, "Low"),
+        close=_required_decimal(value, "Close"),
+        volume=_optional_int(value, "TotalVolume", "Volume"),
+    )
+
+
+def _bar_day(value: Mapping[str, object]) -> date:
+    timestamp_value = (
+        _optional_text(value, "TimeStamp")
+        or _optional_text(value, "Timestamp")
+        or _optional_text(value, "Date")
+        or _optional_text(value, "TradeDate")
+    )
+    if timestamp_value is None:
+        raise ValueError("TradeStation bar timestamp is required")
+    if "T" in timestamp_value:
+        return datetime.fromisoformat(timestamp_value.replace("Z", "+00:00")).date()
+    return date.fromisoformat(timestamp_value[:10])
+
+
+def _optional_int(value: Mapping[str, object], *names: str) -> int | None:
+    for name in names:
+        raw_value = value.get(name)
+        if raw_value is not None:
+            return int(Decimal(str(raw_value)))
+    return None
 
 
 def _tradestation_order_type(order_type: OrderType) -> str:
