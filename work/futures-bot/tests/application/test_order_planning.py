@@ -1,14 +1,18 @@
 from decimal import Decimal
 
-from futures_bot.application.order_planning import OrderPlanningConfig, plan_order_to_target
+from futures_bot.application.order_planning import (
+    OrderPlanningConfig,
+    plan_order_to_target,
+    plan_orders_to_targets,
+)
 from futures_bot.domain.enums import OrderSide, OrderType
 from futures_bot.domain.portfolio import Position
 from futures_bot.portfolio.position_sizing import PositionTarget
 
 
-def _position(quantity: int) -> Position:
+def _position(quantity: int, instrument_id: str = "ES-202609-CME") -> Position:
     return Position(
-        instrument_id="ES-202609-CME",
+        instrument_id=instrument_id,
         quantity=quantity,
         average_price=Decimal("5000"),
     )
@@ -77,3 +81,72 @@ def test_order_planning_rejects_instrument_mismatch():
         assert str(exc) == "target and current_position instruments must match"
     else:
         raise AssertionError("expected instrument mismatch to be rejected")
+
+
+def test_plan_orders_to_targets_orders_risk_reducing_deltas_before_new_exposure():
+    intents = plan_orders_to_targets(
+        targets=(
+            PositionTarget(instrument_id="NQ-202609-CME", quantity=2),
+            PositionTarget(instrument_id="ES-202609-CME", quantity=2),
+            PositionTarget(instrument_id="CL-202609-NYMEX", quantity=-1),
+        ),
+        current_positions={
+            "NQ-202609-CME": _position(0, instrument_id="NQ-202609-CME"),
+            "ES-202609-CME": _position(5, instrument_id="ES-202609-CME"),
+            "CL-202609-NYMEX": _position(-3, instrument_id="CL-202609-NYMEX"),
+        },
+        config=OrderPlanningConfig(client_order_prefix="rebalance", order_type=OrderType.MARKET),
+    )
+
+    assert [(intent.instrument_id, intent.side, intent.quantity) for intent in intents] == [
+        ("ES-202609-CME", OrderSide.SELL, 3),
+        ("CL-202609-NYMEX", OrderSide.BUY, 2),
+        ("NQ-202609-CME", OrderSide.BUY, 2),
+    ]
+
+
+def test_plan_orders_to_targets_skips_positions_already_at_target():
+    intents = plan_orders_to_targets(
+        targets=(
+            PositionTarget(instrument_id="ES-202609-CME", quantity=2),
+            PositionTarget(instrument_id="NQ-202609-CME", quantity=1),
+        ),
+        current_positions={
+            "ES-202609-CME": _position(2, instrument_id="ES-202609-CME"),
+            "NQ-202609-CME": _position(0, instrument_id="NQ-202609-CME"),
+        },
+        config=OrderPlanningConfig(client_order_prefix="rebalance", order_type=OrderType.MARKET),
+    )
+
+    assert [(intent.instrument_id, intent.side, intent.quantity) for intent in intents] == [
+        ("NQ-202609-CME", OrderSide.BUY, 1),
+    ]
+
+
+def test_plan_orders_to_targets_rejects_duplicate_targets():
+    try:
+        plan_orders_to_targets(
+            targets=(
+                PositionTarget(instrument_id="ES-202609-CME", quantity=2),
+                PositionTarget(instrument_id="ES-202609-CME", quantity=3),
+            ),
+            current_positions={"ES-202609-CME": _position(1)},
+            config=OrderPlanningConfig(client_order_prefix="rebalance", order_type=OrderType.MARKET),
+        )
+    except ValueError as exc:
+        assert str(exc) == "target instrument IDs must be unique"
+    else:
+        raise AssertionError("expected duplicate targets to be rejected")
+
+
+def test_plan_orders_to_targets_rejects_missing_current_position():
+    try:
+        plan_orders_to_targets(
+            targets=(PositionTarget(instrument_id="ES-202609-CME", quantity=2),),
+            current_positions={},
+            config=OrderPlanningConfig(client_order_prefix="rebalance", order_type=OrderType.MARKET),
+        )
+    except ValueError as exc:
+        assert str(exc) == "current position is required for ES-202609-CME"
+    else:
+        raise AssertionError("expected missing current position to be rejected")
