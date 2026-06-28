@@ -1,8 +1,9 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 
+from futures_bot.application.order_activity import OrderActivityRecord
 from futures_bot.application.order_updates import OrderUpdateService
-from futures_bot.domain.enums import OrderSide
+from futures_bot.domain.enums import OrderSide, OrderType
 from futures_bot.domain.order_lifecycle import OrderLifecycle, OrderLifecycleStatus
 from futures_bot.ports.audit import InMemoryAuditLog
 from futures_bot.ports.broker import BrokerOrderUpdate, BrokerOrderUpdateType
@@ -17,6 +18,30 @@ class RecordingPositionLedger:
 
     def apply_fill(self, update: BrokerOrderUpdate, order_side: OrderSide) -> None:
         self.applied_fills.append((update, order_side))
+
+
+class StaticOrderActivityLookup:
+    def __init__(self, records: tuple[OrderActivityRecord, ...]) -> None:
+        self.records = {record.client_order_id: record for record in records}
+
+    def record_for(self, client_order_id: str) -> OrderActivityRecord | None:
+        return self.records.get(client_order_id)
+
+
+def _activity_record(
+    client_order_id: str = "order-1",
+    instrument_id: str = "ES-202609-CME",
+) -> OrderActivityRecord:
+    return OrderActivityRecord(
+        client_order_id=client_order_id,
+        broker_order_id="broker-123",
+        instrument_id=instrument_id,
+        timestamp=NOW,
+        side=OrderSide.BUY,
+        quantity=5,
+        order_type=OrderType.LIMIT,
+        limit_price=Decimal("5000.25"),
+    )
 
 
 def _update(update_type: BrokerOrderUpdateType, **overrides: object) -> BrokerOrderUpdate:
@@ -118,6 +143,49 @@ def test_order_update_service_applies_position_ledger_when_configured_for_fill()
     assert updated.status == OrderLifecycleStatus.PARTIALLY_FILLED
     assert position_ledger.applied_fills == [(fill_update, OrderSide.BUY)]
     assert audit_log.events[-1]["update_type"] == "fill"
+
+
+def test_order_update_service_recovers_order_metadata_for_restarted_fill_handler():
+    audit_log = InMemoryAuditLog()
+    position_ledger = RecordingPositionLedger()
+    order_activity = StaticOrderActivityLookup((_activity_record(),))
+    service = OrderUpdateService(
+        audit_log,
+        position_ledger=position_ledger,
+        order_activity=order_activity,
+    )
+    lifecycle = OrderLifecycle.pending_submit(client_order_id="order-1").mark_working()
+    fill_update = _update(
+        BrokerOrderUpdateType.FILL,
+        fill_quantity=2,
+        fill_price=Decimal("5001.25"),
+    )
+
+    updated = service.apply(lifecycle=lifecycle, update=fill_update)
+
+    assert updated.status == OrderLifecycleStatus.PARTIALLY_FILLED
+    assert updated.filled_quantity == 2
+    assert position_ledger.applied_fills == [(fill_update, OrderSide.BUY)]
+    assert audit_log.events[-1]["filled_quantity"] == 2
+
+
+def test_order_update_service_rejects_activity_instrument_mismatch():
+    audit_log = InMemoryAuditLog()
+    order_activity = StaticOrderActivityLookup((_activity_record(instrument_id="NQ-202609-CME"),))
+    service = OrderUpdateService(audit_log, order_activity=order_activity)
+    lifecycle = OrderLifecycle.pending_submit(client_order_id="order-1").mark_working()
+
+    try:
+        service.apply(
+            lifecycle=lifecycle,
+            update=_update(BrokerOrderUpdateType.FILL, fill_quantity=1),
+        )
+    except ValueError as exc:
+        assert str(exc) == "broker update instrument_id does not match order activity"
+    else:
+        raise AssertionError("expected mismatched order activity instrument to be rejected")
+
+    assert audit_log.events == ()
 
 
 def test_order_update_service_requires_order_side_for_position_ledger_fills():

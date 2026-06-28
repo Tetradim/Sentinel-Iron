@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from futures_bot.application.order_activity import OrderActivityRecord
 from futures_bot.domain.enums import OrderSide
 from futures_bot.domain.order_lifecycle import OrderLifecycle
 from futures_bot.ports.audit import AuditLogPort
@@ -13,37 +14,60 @@ class PositionLedgerPort(Protocol):
         """Apply one broker fill to the internal position ledger."""
 
 
+class OrderActivityLookupPort(Protocol):
+    def record_for(self, client_order_id: str) -> OrderActivityRecord | None:
+        """Return persisted broker-accepted order activity by client order ID."""
+
+
 class OrderUpdateService:
     def __init__(
         self,
         audit_log: AuditLogPort,
         position_ledger: PositionLedgerPort | None = None,
+        order_activity: OrderActivityLookupPort | None = None,
     ) -> None:
         self._audit_log = audit_log
         self._position_ledger = position_ledger
+        self._order_activity = order_activity
 
     def apply(
         self,
         lifecycle: OrderLifecycle,
         update: BrokerOrderUpdate,
-        order_quantity: int,
+        order_quantity: int | None = None,
         order_side: OrderSide | None = None,
     ) -> OrderLifecycle:
-        if order_quantity <= 0:
-            raise ValueError("order_quantity must be positive")
         if update.client_order_id != lifecycle.client_order_id:
             raise ValueError("broker update client_order_id does not match lifecycle")
+
+        resolved_order_quantity = order_quantity
+        resolved_order_side = order_side
+        if self._order_activity is not None:
+            activity_record = self._order_activity.record_for(update.client_order_id)
+            if activity_record is not None:
+                if activity_record.instrument_id != update.instrument_id:
+                    raise ValueError("broker update instrument_id does not match order activity")
+                if resolved_order_quantity is None:
+                    resolved_order_quantity = activity_record.quantity
+                if resolved_order_side is None:
+                    resolved_order_side = activity_record.side
+
+        if resolved_order_quantity is not None and resolved_order_quantity <= 0:
+            raise ValueError("order_quantity must be positive")
+        if update.update_type == BrokerOrderUpdateType.FILL and resolved_order_quantity is None:
+            raise ValueError("order_quantity is required for fill updates")
         if (
             self._position_ledger is not None
             and update.update_type == BrokerOrderUpdateType.FILL
-            and order_side is None
+            and resolved_order_side is None
         ):
             raise ValueError("order_side is required when position ledger is configured")
 
         if update.update_type == BrokerOrderUpdateType.WORKING:
             updated = lifecycle.mark_working()
         elif update.update_type == BrokerOrderUpdateType.FILL:
-            updated = lifecycle.record_fill(update.fill_quantity, order_quantity)
+            assert resolved_order_quantity is not None
+            updated = lifecycle.record_fill(update.fill_quantity, resolved_order_quantity)
         elif update.update_type == BrokerOrderUpdateType.CANCELED:
             updated = lifecycle.mark_canceled()
         elif update.update_type == BrokerOrderUpdateType.REJECTED:
@@ -68,6 +92,6 @@ class OrderUpdateService:
             }
         )
         if self._position_ledger is not None and update.update_type == BrokerOrderUpdateType.FILL:
-            assert order_side is not None
-            self._position_ledger.apply_fill(update, order_side)
+            assert resolved_order_side is not None
+            self._position_ledger.apply_fill(update, resolved_order_side)
         return updated
