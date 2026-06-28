@@ -35,22 +35,11 @@ def plan_order_to_target(
     if delta == 0:
         return None
 
-    side = OrderSide.BUY if delta > 0 else OrderSide.SELL
-    quantity = abs(delta)
-    client_order_id = (
-        f"{config.client_order_prefix}-"
-        f"{target.instrument_id}-"
-        f"{side.value}-"
-        f"{quantity}"
-    )
-
-    return OrderIntent(
+    return _build_order_intent(
         instrument_id=target.instrument_id,
-        side=side,
-        quantity=quantity,
-        order_type=config.order_type,
-        limit_price=config.limit_price,
-        client_order_id=client_order_id,
+        side=OrderSide.BUY if delta > 0 else OrderSide.SELL,
+        quantity=abs(delta),
+        config=config,
     )
 
 
@@ -60,7 +49,7 @@ def plan_orders_to_targets(
     config: OrderPlanningConfig,
 ) -> tuple[OrderIntent, ...]:
     seen_instrument_ids: set[str] = set()
-    planned_orders: list[tuple[bool, int, OrderIntent]] = []
+    planned_orders: list[tuple[bool, int, int, OrderIntent]] = []
 
     for target_index, target in enumerate(targets):
         if target.instrument_id in seen_instrument_ids:
@@ -73,6 +62,20 @@ def plan_orders_to_targets(
             raise ValueError(
                 f"current position is required for {target.instrument_id}"
             ) from exc
+
+        if _is_position_reversal(
+            current_quantity=current_position.quantity,
+            target_quantity=target.quantity,
+        ):
+            planned_orders.extend(
+                _plan_position_reversal(
+                    target=target,
+                    current_position=current_position,
+                    target_index=target_index,
+                    config=config,
+                )
+            )
+            continue
 
         intent = plan_order_to_target(
             target=target,
@@ -89,16 +92,85 @@ def plan_orders_to_targets(
                     target_quantity=target.quantity,
                 ),
                 target_index,
+                0,
                 intent,
             )
         )
 
     return tuple(
         intent
-        for _, _, intent in sorted(
+        for _, _, _, intent in sorted(
             planned_orders,
-            key=lambda planned_order: (not planned_order[0], planned_order[1]),
+            key=lambda planned_order: (
+                not planned_order[0],
+                planned_order[1],
+                planned_order[2],
+            ),
         )
+    )
+
+
+def _build_order_intent(
+    instrument_id: str,
+    side: OrderSide,
+    quantity: int,
+    config: OrderPlanningConfig,
+    client_order_suffix: str | None = None,
+) -> OrderIntent:
+    client_order_id = (
+        f"{config.client_order_prefix}-"
+        f"{instrument_id}-"
+        f"{side.value}-"
+        f"{quantity}"
+    )
+    if client_order_suffix is not None:
+        client_order_id = f"{client_order_id}-{client_order_suffix}"
+
+    return OrderIntent(
+        instrument_id=instrument_id,
+        side=side,
+        quantity=quantity,
+        order_type=config.order_type,
+        limit_price=config.limit_price,
+        client_order_id=client_order_id,
+    )
+
+
+def _plan_position_reversal(
+    target: PositionTarget,
+    current_position: Position,
+    target_index: int,
+    config: OrderPlanningConfig,
+) -> tuple[
+    tuple[bool, int, int, OrderIntent],
+    tuple[bool, int, int, OrderIntent],
+]:
+    side = OrderSide.SELL if current_position.quantity > 0 else OrderSide.BUY
+    flatten_intent = _build_order_intent(
+        instrument_id=target.instrument_id,
+        side=side,
+        quantity=abs(current_position.quantity),
+        config=config,
+        client_order_suffix="flatten",
+    )
+    open_intent = _build_order_intent(
+        instrument_id=target.instrument_id,
+        side=side,
+        quantity=abs(target.quantity),
+        config=config,
+        client_order_suffix="open",
+    )
+
+    return (
+        (True, target_index, 0, flatten_intent),
+        (False, target_index, 1, open_intent),
+    )
+
+
+def _is_position_reversal(current_quantity: int, target_quantity: int) -> bool:
+    return (
+        (current_quantity > 0 and target_quantity < 0)
+        or (current_quantity < 0 and target_quantity > 0)
     )
 
 

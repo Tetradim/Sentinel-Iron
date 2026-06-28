@@ -123,6 +123,32 @@ def test_plan_orders_to_targets_skips_positions_already_at_target():
     ]
 
 
+def test_plan_orders_to_targets_splits_long_to_short_reversal():
+    intents = plan_orders_to_targets(
+        targets=(PositionTarget(instrument_id="ES-202609-CME", quantity=-2),),
+        current_positions={"ES-202609-CME": _position(2)},
+        config=OrderPlanningConfig(client_order_prefix="rebalance", order_type=OrderType.MARKET),
+    )
+
+    assert [(intent.side, intent.quantity, intent.client_order_id) for intent in intents] == [
+        (OrderSide.SELL, 2, "rebalance-ES-202609-CME-sell-2-flatten"),
+        (OrderSide.SELL, 2, "rebalance-ES-202609-CME-sell-2-open"),
+    ]
+
+
+def test_plan_orders_to_targets_splits_short_to_long_reversal():
+    intents = plan_orders_to_targets(
+        targets=(PositionTarget(instrument_id="ES-202609-CME", quantity=1),),
+        current_positions={"ES-202609-CME": _position(-3)},
+        config=OrderPlanningConfig(client_order_prefix="rebalance", order_type=OrderType.MARKET),
+    )
+
+    assert [(intent.side, intent.quantity, intent.client_order_id) for intent in intents] == [
+        (OrderSide.BUY, 3, "rebalance-ES-202609-CME-buy-3-flatten"),
+        (OrderSide.BUY, 1, "rebalance-ES-202609-CME-buy-1-open"),
+    ]
+
+
 def test_plan_orders_to_targets_rejects_duplicate_targets():
     try:
         plan_orders_to_targets(
