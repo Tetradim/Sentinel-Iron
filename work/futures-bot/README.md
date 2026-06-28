@@ -222,4 +222,4 @@ All named broker adapter boundaries are now represented in the shared broker por
 
 ## Strategy Roadmap
 
-No strategy can bypass broker ports, reconciliation, risk checks, or audit logging. The first strategy target is diversified futures trend following with volatility targeting after live broker lifecycle handling is in place.
+No strategy can bypass broker ports, reconciliation, risk checks, or audit logging. The first strategy target is diversified futures trend following with volatility targeting after live broker lifecycle handling is in place. `futures_bot.strategies.trend_following.calculate_volatility_adjusted_trend_signal` can convert multi-lookback returns into volatility-normalized scores before they enter portfolio sizing, so weak and strong trends are not treated identically.
