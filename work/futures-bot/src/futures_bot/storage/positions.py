@@ -32,6 +32,21 @@ class JsonPositionStore:
             positions[position.instrument_id] = position
         return positions
 
+    def save(self, positions: Mapping[str, Position]) -> None:
+        payload = [
+            {
+                "instrument_id": position.instrument_id,
+                "quantity": position.quantity,
+                "average_price": str(position.average_price),
+            }
+            for position in sorted(positions.values(), key=lambda item: item.instrument_id)
+        ]
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(
+            json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True),
+            encoding="utf-8",
+        )
+
     def _decode_position(self, value: object) -> Position:
         if not isinstance(value, dict):
             raise ValueError("invalid internal position record")

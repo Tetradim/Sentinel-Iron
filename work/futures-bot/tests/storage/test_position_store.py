@@ -43,6 +43,33 @@ def test_json_position_store_loads_position_mapping(tmp_path):
     }
 
 
+def test_json_position_store_saves_position_mapping_in_stable_order(tmp_path):
+    path = tmp_path / "state" / "positions.json"
+    store = _store_class()(path)
+
+    store.save(
+        {
+            "NQ-202609-CME": Position("NQ-202609-CME", -1, Decimal("18000.50")),
+            "ES-202609-CME": Position("ES-202609-CME", 2, Decimal("5000.25")),
+        }
+    )
+
+    assert path.exists()
+    assert json.loads(path.read_text(encoding="utf-8")) == [
+        {
+            "average_price": "5000.25",
+            "instrument_id": "ES-202609-CME",
+            "quantity": 2,
+        },
+        {
+            "average_price": "18000.50",
+            "instrument_id": "NQ-202609-CME",
+            "quantity": -1,
+        },
+    ]
+    assert store.load()["ES-202609-CME"].quantity == 2
+
+
 def test_json_position_store_rejects_missing_state_file(tmp_path):
     store = _store_class()(tmp_path / "positions.json")
 

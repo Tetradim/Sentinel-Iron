@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from futures_bot.application.order_updates import OrderUpdateService
 from futures_bot.domain.order_lifecycle import OrderLifecycle, OrderLifecycleStatus
@@ -68,6 +69,12 @@ def test_order_update_service_records_fill_and_audits_cumulative_filled_quantity
     assert audit_log.events[-1]["status"] == "partially_filled"
     assert audit_log.events[-1]["fill_quantity"] == 2
     assert audit_log.events[-1]["filled_quantity"] == 2
+
+
+def test_fill_update_accepts_optional_fill_price_for_position_accounting():
+    update = _update(BrokerOrderUpdateType.FILL, fill_quantity=1, fill_price=Decimal("5001.25"))
+
+    assert update.fill_price == Decimal("5001.25")
 
 
 def test_order_update_service_marks_working_order_rejected_and_audits_reason():

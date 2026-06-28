@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from enum import StrEnum
 from typing import Protocol
 
@@ -52,6 +53,7 @@ class BrokerOrderUpdate:
     update_type: BrokerOrderUpdateType
     timestamp: datetime
     fill_quantity: int = 0
+    fill_price: Decimal | None = None
     reject_reason: str | None = None
     broker_error_code: str | None = None
 
@@ -70,6 +72,10 @@ class BrokerOrderUpdate:
             raise ValueError("fill_quantity must be positive for fill updates")
         if self.update_type != BrokerOrderUpdateType.FILL and self.fill_quantity != 0:
             raise ValueError("fill_quantity is only valid for fill updates")
+        if self.fill_price is not None and self.fill_price <= 0:
+            raise ValueError("fill_price must be positive")
+        if self.update_type != BrokerOrderUpdateType.FILL and self.fill_price is not None:
+            raise ValueError("fill_price is only valid for fill updates")
         if self.update_type == BrokerOrderUpdateType.REJECTED and not self.reject_reason:
             raise ValueError("reject_reason is required for rejected updates")
 
