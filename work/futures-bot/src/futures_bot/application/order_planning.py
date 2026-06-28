@@ -48,6 +48,22 @@ def plan_orders_to_targets(
     current_positions: Mapping[str, Position],
     config: OrderPlanningConfig,
 ) -> tuple[OrderIntent, ...]:
+    return tuple(
+        intent
+        for phase in plan_rebalance_order_phases(
+            targets=targets,
+            current_positions=current_positions,
+            config=config,
+        )
+        for intent in phase
+    )
+
+
+def plan_rebalance_order_phases(
+    targets: tuple[PositionTarget, ...],
+    current_positions: Mapping[str, Position],
+    config: OrderPlanningConfig,
+) -> tuple[tuple[OrderIntent, ...], ...]:
     seen_instrument_ids: set[str] = set()
     planned_orders: list[tuple[bool, int, int, OrderIntent]] = []
 
@@ -97,15 +113,34 @@ def plan_orders_to_targets(
             )
         )
 
+    risk_reducing_orders = _order_phase(
+        planned_orders=planned_orders,
+        risk_reducing=True,
+    )
+    risk_increasing_orders = _order_phase(
+        planned_orders=planned_orders,
+        risk_reducing=False,
+    )
+    return tuple(
+        phase
+        for phase in (risk_reducing_orders, risk_increasing_orders)
+        if phase
+    )
+
+
+def _order_phase(
+    planned_orders: list[tuple[bool, int, int, OrderIntent]],
+    risk_reducing: bool,
+) -> tuple[OrderIntent, ...]:
     return tuple(
         intent
         for _, _, _, intent in sorted(
-            planned_orders,
-            key=lambda planned_order: (
-                not planned_order[0],
-                planned_order[1],
-                planned_order[2],
+            (
+                planned_order
+                for planned_order in planned_orders
+                if planned_order[0] is risk_reducing
             ),
+            key=lambda planned_order: (planned_order[1], planned_order[2]),
         )
     )
 
