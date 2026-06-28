@@ -3,8 +3,10 @@ from decimal import Decimal
 import pytest
 
 from futures_bot.portfolio.position_sizing import (
+    PortfolioRiskCapConfig,
     PositionSizingConfig,
     PositionTarget,
+    cap_position_targets_by_gross_risk,
     calculate_volatility_target_position,
 )
 from futures_bot.strategies.trend_following import TrendSignal
@@ -61,6 +63,66 @@ def test_position_size_is_capped_by_max_contracts():
     )
 
     assert target.quantity == 7
+
+
+def test_portfolio_risk_cap_leaves_targets_under_budget_unchanged():
+    targets = cap_position_targets_by_gross_risk(
+        targets=(
+            PositionTarget("ES-202609-CME", 2),
+            PositionTarget("NQ-202609-CME", -1),
+        ),
+        dollar_volatility_by_instrument={
+            "ES-202609-CME": Decimal("2500"),
+            "NQ-202609-CME": Decimal("5000"),
+        },
+        account_equity=Decimal("100000"),
+        config=PortfolioRiskCapConfig(max_gross_risk_fraction=Decimal("0.10")),
+    )
+
+    assert targets == (
+        PositionTarget("ES-202609-CME", 2),
+        PositionTarget("NQ-202609-CME", -1),
+    )
+
+
+def test_portfolio_risk_cap_scales_targets_over_budget_proportionally():
+    targets = cap_position_targets_by_gross_risk(
+        targets=(
+            PositionTarget("ES-202609-CME", 4),
+            PositionTarget("NQ-202609-CME", -2),
+        ),
+        dollar_volatility_by_instrument={
+            "ES-202609-CME": Decimal("2500"),
+            "NQ-202609-CME": Decimal("5000"),
+        },
+        account_equity=Decimal("100000"),
+        config=PortfolioRiskCapConfig(max_gross_risk_fraction=Decimal("0.10")),
+    )
+
+    assert targets == (
+        PositionTarget("ES-202609-CME", 2),
+        PositionTarget("NQ-202609-CME", -1),
+    )
+
+
+def test_portfolio_risk_cap_rejects_missing_dollar_volatility():
+    with pytest.raises(ValueError, match="dollar volatility is required for ES-202609-CME"):
+        cap_position_targets_by_gross_risk(
+            targets=(PositionTarget("ES-202609-CME", 1),),
+            dollar_volatility_by_instrument={},
+            account_equity=Decimal("100000"),
+            config=PortfolioRiskCapConfig(max_gross_risk_fraction=Decimal("0.10")),
+        )
+
+
+def test_portfolio_risk_cap_rejects_non_positive_dollar_volatility():
+    with pytest.raises(ValueError, match="dollar volatility must be positive for ES-202609-CME"):
+        cap_position_targets_by_gross_risk(
+            targets=(PositionTarget("ES-202609-CME", 1),),
+            dollar_volatility_by_instrument={"ES-202609-CME": Decimal("0")},
+            account_equity=Decimal("100000"),
+            config=PortfolioRiskCapConfig(max_gross_risk_fraction=Decimal("0.10")),
+        )
 
 
 def test_position_sizing_rejects_non_positive_dollar_volatility():
