@@ -40,6 +40,7 @@ class RebalanceRiskContextInputs:
     recent_order_timestamps: tuple[datetime, ...]
     kill_switch_active: bool
     positions_reconciled: bool
+    working_order_intents: tuple[OrderIntent, ...] = ()
 
 
 def build_rebalance_risk_contexts(
@@ -72,6 +73,7 @@ def build_rebalance_risk_contexts(
             recent_order_timestamps=inputs.recent_order_timestamps,
             kill_switch_active=inputs.kill_switch_active,
             positions_reconciled=inputs.positions_reconciled,
+            working_order_intents=_working_order_intents_for_intent(intent, inputs),
         )
 
     return contexts
@@ -129,6 +131,18 @@ def _margin_estimate_for_intent(
         values=inputs.margin_estimates,
         key=intent.client_order_id,
         label="margin estimate",
+    )
+
+
+def _working_order_intents_for_intent(
+    intent: OrderIntent,
+    inputs: RebalanceRiskContextInputs,
+) -> tuple[OrderIntent, ...]:
+    return tuple(
+        working_intent
+        for working_intent in inputs.working_order_intents
+        if working_intent.instrument_id == intent.instrument_id
+        and working_intent.client_order_id != intent.client_order_id
     )
 
 

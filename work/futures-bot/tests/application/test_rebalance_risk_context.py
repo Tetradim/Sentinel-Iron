@@ -122,6 +122,32 @@ def test_build_rebalance_risk_contexts_maps_each_intent_by_client_order_id():
     assert context.positions_reconciled is True
 
 
+def test_build_rebalance_risk_contexts_scopes_working_orders_to_intent_instrument():
+    working_es = OrderIntent(
+        instrument_id="ES-202609-CME",
+        side=OrderSide.SELL,
+        quantity=1,
+        order_type=OrderType.LIMIT,
+        limit_price=Decimal("5000.00"),
+        client_order_id="working-es",
+    )
+    working_nq = OrderIntent(
+        instrument_id="NQ-202609-CME",
+        side=OrderSide.SELL,
+        quantity=1,
+        order_type=OrderType.LIMIT,
+        limit_price=Decimal("15000.00"),
+        client_order_id="working-nq",
+    )
+
+    contexts = build_rebalance_risk_contexts(
+        intents=(_intent(),),
+        inputs=_inputs(working_order_intents=(working_es, working_nq)),
+    )
+
+    assert contexts["order-1"].working_order_intents == (working_es,)
+
+
 def test_build_rebalance_risk_contexts_supports_multiple_instruments():
     contexts = build_rebalance_risk_contexts(
         intents=(

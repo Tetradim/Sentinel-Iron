@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import Protocol
 
 from futures_bot.domain.enums import OrderSide, OrderType
+from futures_bot.domain.order_lifecycle import OrderLifecycle, OrderLifecycleStatus
 from futures_bot.domain.orders import OrderIntent
 from futures_bot.ports.audit import AuditLogPort
 
@@ -48,6 +49,49 @@ class OrderActivityStorePort(Protocol):
 
     def append(self, record: OrderActivityRecord) -> None:
         """Persist one broker-accepted order activity record."""
+
+
+class OrderLifecycleLookupPort(Protocol):
+    def load(self, client_order_id: str) -> OrderLifecycle | None:
+        """Load the latest lifecycle state for a client order ID."""
+
+
+WORKING_ORDER_STATUSES = frozenset(
+    {
+        OrderLifecycleStatus.WORKING,
+        OrderLifecycleStatus.PARTIALLY_FILLED,
+    }
+)
+
+
+def working_order_intents_from_activity(
+    records: tuple[OrderActivityRecord, ...],
+    lifecycle_store: OrderLifecycleLookupPort,
+) -> tuple[OrderIntent, ...]:
+    intents: list[OrderIntent] = []
+    for record in records:
+        lifecycle = lifecycle_store.load(record.client_order_id)
+        if lifecycle is None or lifecycle.status not in WORKING_ORDER_STATUSES:
+            continue
+        if lifecycle.client_order_id != record.client_order_id:
+            raise ValueError("order lifecycle client order ID mismatch")
+
+        remaining_quantity = record.quantity - lifecycle.filled_quantity
+        if remaining_quantity <= 0:
+            raise ValueError("working order filled quantity exceeds recorded quantity")
+
+        intents.append(
+            OrderIntent(
+                instrument_id=record.instrument_id,
+                side=record.side,
+                quantity=remaining_quantity,
+                order_type=record.order_type,
+                limit_price=record.limit_price,
+                client_order_id=record.client_order_id,
+            )
+        )
+
+    return tuple(intents)
 
 
 class OrderActivityTracker:

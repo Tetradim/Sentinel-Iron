@@ -1,8 +1,13 @@
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from futures_bot.application.order_activity import OrderActivityTracker
+from futures_bot.application.order_activity import (
+    OrderActivityRecord,
+    OrderActivityTracker,
+    working_order_intents_from_activity,
+)
 from futures_bot.domain.enums import OrderSide, OrderType
+from futures_bot.domain.order_lifecycle import OrderLifecycle, OrderLifecycleStatus
 from futures_bot.domain.orders import OrderIntent
 from futures_bot.ports.audit import InMemoryAuditLog
 
@@ -19,6 +24,33 @@ def _intent(client_order_id: str = "order-1") -> OrderIntent:
         limit_price=Decimal("5000.25"),
         client_order_id=client_order_id,
     )
+
+
+def _record(
+    client_order_id: str = "order-1",
+    broker_order_id: str = "broker-123",
+    quantity: int = 1,
+) -> OrderActivityRecord:
+    return OrderActivityRecord(
+        client_order_id=client_order_id,
+        broker_order_id=broker_order_id,
+        instrument_id="ES-202609-CME",
+        timestamp=NOW,
+        side=OrderSide.BUY,
+        quantity=quantity,
+        order_type=OrderType.LIMIT,
+        limit_price=Decimal("5000.25"),
+    )
+
+
+class RecordingLifecycleStore:
+    def __init__(self, lifecycles: dict[str, OrderLifecycle]) -> None:
+        self.lifecycles = lifecycles
+        self.loaded_client_order_ids: list[str] = []
+
+    def load(self, client_order_id: str) -> OrderLifecycle | None:
+        self.loaded_client_order_ids.append(client_order_id)
+        return self.lifecycles.get(client_order_id)
 
 
 def test_order_activity_records_submission_and_builds_risk_inputs():
@@ -134,3 +166,52 @@ def test_order_activity_snapshot_requires_positive_recent_window():
         assert str(exc) == "recent_order_window must be positive"
     else:
         raise AssertionError("expected invalid recent window to be rejected")
+
+
+def test_working_order_intents_from_activity_uses_working_lifecycle_state():
+    lifecycle_store = RecordingLifecycleStore(
+        {
+            "working-1": OrderLifecycle.pending_submit("working-1").mark_working(),
+            "partial-1": OrderLifecycle.pending_submit("partial-1")
+            .mark_working()
+            .record_fill(fill_quantity=1, order_quantity=3),
+            "filled-1": OrderLifecycle(
+                client_order_id="filled-1",
+                status=OrderLifecycleStatus.FILLED,
+                filled_quantity=1,
+            ),
+        }
+    )
+
+    intents = working_order_intents_from_activity(
+        (
+            _record("working-1", "broker-working-1", quantity=2),
+            _record("partial-1", "broker-partial-1", quantity=3),
+            _record("filled-1", "broker-filled-1", quantity=1),
+        ),
+        lifecycle_store,
+    )
+
+    assert lifecycle_store.loaded_client_order_ids == [
+        "working-1",
+        "partial-1",
+        "filled-1",
+    ]
+    assert intents == (
+        OrderIntent(
+            instrument_id="ES-202609-CME",
+            side=OrderSide.BUY,
+            quantity=2,
+            order_type=OrderType.LIMIT,
+            limit_price=Decimal("5000.25"),
+            client_order_id="working-1",
+        ),
+        OrderIntent(
+            instrument_id="ES-202609-CME",
+            side=OrderSide.BUY,
+            quantity=2,
+            order_type=OrderType.LIMIT,
+            limit_price=Decimal("5000.25"),
+            client_order_id="partial-1",
+        ),
+    )
