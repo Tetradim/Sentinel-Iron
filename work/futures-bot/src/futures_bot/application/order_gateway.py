@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from futures_bot.application.kill_switch import KillSwitchStorePort
+from futures_bot.application.live_trading import LiveTradingGuard
 from futures_bot.application.order_submission import OrderSubmissionResult, OrderSubmissionService
 from futures_bot.application.trading_readiness import TradingReadinessResult
 from futures_bot.domain.orders import OrderIntent
@@ -26,10 +27,14 @@ class OrderGatewayService:
         submission: OrderSubmissionService,
         audit_log: AuditLogPort,
         kill_switch_store: KillSwitchStorePort | None = None,
+        broker_environment: str = "paper",
+        live_trading_activation: str | None = None,
     ) -> None:
         self._submission = submission
         self._audit_log = audit_log
         self._kill_switch_store = kill_switch_store
+        self._broker_environment = broker_environment
+        self._live_trading_activation = live_trading_activation
 
     def submit(
         self,
@@ -38,6 +43,14 @@ class OrderGatewayService:
         readiness: TradingReadinessResult,
         timestamp: datetime,
     ) -> OrderGatewayResult:
+        live_trading_block = self._evaluate_live_trading_activation(
+            intent,
+            readiness,
+            timestamp,
+        )
+        if live_trading_block is not None:
+            return live_trading_block
+
         kill_switch_block = self._evaluate_kill_switch(intent, readiness, timestamp)
         if kill_switch_block is not None:
             return kill_switch_block
@@ -74,6 +87,27 @@ class OrderGatewayService:
             submission=submission,
             reason=None if submitted else "order_not_submitted",
             detail="submitted" if submitted else submission.lifecycle.reject_reason or submission.risk_decision.detail,
+        )
+
+    def _evaluate_live_trading_activation(
+        self,
+        intent: OrderIntent,
+        readiness: TradingReadinessResult,
+        timestamp: datetime,
+    ) -> OrderGatewayResult | None:
+        decision = LiveTradingGuard().evaluate(
+            self._broker_environment,
+            activation_token=self._live_trading_activation,
+        )
+        if decision.allowed:
+            return None
+
+        return self._block_order(
+            intent=intent,
+            readiness=readiness,
+            timestamp=timestamp,
+            reason=decision.reason or "live_trading_blocked",
+            detail=decision.detail,
         )
 
     def _evaluate_kill_switch(

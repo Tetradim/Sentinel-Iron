@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from futures_bot.application.kill_switch import KillSwitchState
+from futures_bot.application.live_trading import LIVE_TRADING_ACTIVATION
 from futures_bot.application.order_gateway import OrderGatewayService
 from futures_bot.application.order_submission import OrderSubmissionService
 from futures_bot.application.risk_check import RiskCheckService
@@ -148,6 +149,8 @@ def _gateway(
     broker: RecordingBroker,
     audit_log: InMemoryAuditLog,
     kill_switch_store: InMemoryKillSwitchStore | FailingKillSwitchStore | None = None,
+    broker_environment: str = "paper",
+    live_trading_activation: str | None = None,
 ) -> OrderGatewayService:
     submission = OrderSubmissionService(
         risk_check=RiskCheckService(RiskEngine(_limits()), audit_log),
@@ -158,6 +161,8 @@ def _gateway(
         submission=submission,
         audit_log=audit_log,
         kill_switch_store=kill_switch_store,
+        broker_environment=broker_environment,
+        live_trading_activation=live_trading_activation,
     )
 
 
@@ -197,6 +202,66 @@ def test_order_gateway_blocks_not_ready_session_before_risk_or_broker_submission
             "limit_price": "5000.25",
         },
     )
+
+
+def test_order_gateway_blocks_live_submission_without_activation_before_risk_or_broker():
+    audit_log = InMemoryAuditLog()
+    broker = RecordingBroker()
+    gateway = _gateway(
+        broker,
+        audit_log,
+        broker_environment="live",
+        live_trading_activation=None,
+    )
+
+    result = gateway.submit(
+        intent=_intent(),
+        context=_context(),
+        readiness=TradingReadinessResult(ready=True, reason=None, detail="ready"),
+        timestamp=NOW,
+    )
+
+    assert result.submitted is False
+    assert result.submission is None
+    assert result.reason == "live_trading_activation_required"
+    assert result.detail == f"live trading requires activation token {LIVE_TRADING_ACTIVATION}"
+    assert broker.submitted_orders == []
+    assert audit_log.events == (
+        {
+            "type": "order_submission_blocked",
+            "timestamp": "2026-06-28T14:35:00+00:00",
+            "client_order_id": "order-1",
+            "instrument_id": "ES-202609-CME",
+            "reason": "live_trading_activation_required",
+            "detail": f"live trading requires activation token {LIVE_TRADING_ACTIVATION}",
+            "readiness_reason": None,
+            "side": "buy",
+            "quantity": 1,
+            "order_type": "limit",
+            "limit_price": "5000.25",
+        },
+    )
+
+
+def test_order_gateway_allows_live_submission_with_activation():
+    audit_log = InMemoryAuditLog()
+    broker = RecordingBroker()
+    gateway = _gateway(
+        broker,
+        audit_log,
+        broker_environment="live",
+        live_trading_activation=LIVE_TRADING_ACTIVATION,
+    )
+
+    result = gateway.submit(
+        intent=_intent(),
+        context=_context(),
+        readiness=TradingReadinessResult(ready=True, reason=None, detail="ready"),
+        timestamp=NOW,
+    )
+
+    assert result.submitted is True
+    assert broker.submitted_orders == [BrokerOrder.from_intent(_intent())]
 
 
 def test_order_gateway_blocks_when_persisted_kill_switch_is_active():
