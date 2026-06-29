@@ -10,6 +10,7 @@ This project builds a live-capable futures trading bot. Paper trading is treated
 - **Historical Data Adapter**: The broker adapter capability that returns verified normalized daily bars. If data is absent, malformed, stale, or unsupported, it must fail closed.
 - **Historical Bar**: One normalized OHLCV daily record for one futures instrument. Prices must be positive, OHLC relationships must be valid, and volume must be absent or integral.
 - **Historical Signal Input**: A strategy-ready sequence of `PricePoint` values produced from fetched, validated, cached, and optionally back-adjusted futures contract histories.
+- **Self-Match Guard**: A pre-trade risk control that blocks an incoming order when it could execute against a known working opposite-side order from the same bot/account context on the same instrument.
 - **Instrument Catalog**: Operator-supplied contract metadata, including exchange, contract month, multiplier, tick size, settlement type, and safe trading calendar dates.
 - **Margin Schedule**: Operator-supplied fallback margin data used only when broker-provided margin estimates are unavailable and explicitly routed through the margin schedule provider.
 - **Rebalance Phase**: A step in the live rebalance workflow that must receive risk context, kill-switch status, broker state, margin data, and audit logging before order submission.
@@ -19,4 +20,5 @@ This project builds a live-capable futures trading bot. Paper trading is treated
 - No adapter may fake a broker response for production paths.
 - Paper mode is not demo mode. It must use real broker connectivity and credentials for that broker's paper environment.
 - Strategy code must not bypass broker routes, risk checks, kill switch checks, audit logging, reconciliation, or order lifecycle persistence.
+- Risk checks should prevent avoidable self-trading before a broker or exchange-level self-match prevention setting has to intervene.
 - Historical data absence is a data-quality failure unless a caller explicitly introduces a separate, reviewed sparse-history workflow.

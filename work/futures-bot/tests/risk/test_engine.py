@@ -34,13 +34,14 @@ def _instrument(last_safe_trade_date: date = date(2026, 9, 18)) -> FuturesInstru
 
 def _intent(
     quantity: int = 1,
+    side: OrderSide = OrderSide.BUY,
     order_type: OrderType = OrderType.MARKET,
     limit_price: Decimal | None = None,
     client_order_id: str = "order-1",
 ) -> OrderIntent:
     return OrderIntent(
         instrument_id="ES-202609-CME",
-        side=OrderSide.BUY,
+        side=side,
         quantity=quantity,
         order_type=order_type,
         limit_price=limit_price,
@@ -272,6 +273,41 @@ def test_risk_engine_rejects_order_rate_limit_breach():
     assert decision.approved is False
     assert decision.reason == RiskReason.ORDER_RATE_LIMIT
     assert decision.detail == "order rate limit reached"
+
+
+def test_risk_engine_rejects_potential_self_match_against_working_order():
+    working_sell = _intent(
+        side=OrderSide.SELL,
+        order_type=OrderType.LIMIT,
+        limit_price=Decimal("5000.00"),
+        client_order_id="working-sell-1",
+    )
+
+    decision = RiskEngine(_limits()).evaluate(
+        _intent(order_type=OrderType.MARKET),
+        _context(working_order_intents=(working_sell,)),
+    )
+
+    assert decision.approved is False
+    assert decision.reason == RiskReason.POTENTIAL_SELF_MATCH
+    assert decision.detail == "order could match against an existing working order"
+
+
+def test_risk_engine_allows_non_executable_opposite_side_working_limit_order():
+    resting_sell_above_market = _intent(
+        side=OrderSide.SELL,
+        order_type=OrderType.LIMIT,
+        limit_price=Decimal("5100.00"),
+        client_order_id="working-sell-1",
+    )
+
+    decision = RiskEngine(_limits()).evaluate(
+        _intent(order_type=OrderType.LIMIT, limit_price=Decimal("5000.00")),
+        _context(working_order_intents=(resting_sell_above_market,)),
+    )
+
+    assert decision.approved is True
+    assert decision.reason is None
 
 
 def test_risk_engine_ignores_recent_order_timestamps_outside_rate_window():

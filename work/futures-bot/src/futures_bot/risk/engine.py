@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-from futures_bot.domain.enums import OrderType, RiskReason
+from futures_bot.domain.enums import OrderSide, OrderType, RiskReason
 from futures_bot.domain.instruments import FuturesInstrument
 from futures_bot.domain.orders import OrderIntent
 from futures_bot.domain.portfolio import AccountSnapshot, MarketSnapshot, Position
@@ -69,6 +69,7 @@ class RiskContext:
     recent_order_timestamps: tuple[datetime, ...]
     kill_switch_active: bool
     positions_reconciled: bool
+    working_order_intents: tuple[OrderIntent, ...] = ()
 
     def __post_init__(self) -> None:
         if self.estimated_order_initial_margin < 0:
@@ -122,6 +123,12 @@ class RiskEngine:
         recent_order_count = self._recent_order_count(context)
         if recent_order_count >= self._limits.max_orders_per_window:
             return RiskDecision.reject(RiskReason.ORDER_RATE_LIMIT, "order rate limit reached")
+
+        if self._has_potential_self_match(intent, context.working_order_intents):
+            return RiskDecision.reject(
+                RiskReason.POTENTIAL_SELF_MATCH,
+                "order could match against an existing working order",
+            )
 
         quote_decision = self._evaluate_quote(context.market)
         if not quote_decision.approved:
@@ -215,6 +222,38 @@ class RiskEngine:
             for timestamp in context.recent_order_timestamps
             if context.now - timestamp <= self._limits.order_rate_window
         )
+
+    def _has_potential_self_match(
+        self,
+        intent: OrderIntent,
+        working_order_intents: tuple[OrderIntent, ...],
+    ) -> bool:
+        return any(
+            self._could_match(intent, working_intent)
+            for working_intent in working_order_intents
+        )
+
+    def _could_match(self, intent: OrderIntent, working_intent: OrderIntent) -> bool:
+        if intent.instrument_id != working_intent.instrument_id:
+            return False
+        if intent.side == working_intent.side:
+            return False
+        if intent.order_type == OrderType.MARKET or working_intent.order_type == OrderType.MARKET:
+            return True
+        if intent.limit_price is None or working_intent.limit_price is None:
+            return False
+
+        buy_price = (
+            intent.limit_price
+            if intent.side == OrderSide.BUY
+            else working_intent.limit_price
+        )
+        sell_price = (
+            intent.limit_price
+            if intent.side == OrderSide.SELL
+            else working_intent.limit_price
+        )
+        return buy_price >= sell_price
 
     def _evaluate_quote(self, market: MarketSnapshot) -> RiskDecision:
         if market.bid is None or market.ask is None:
