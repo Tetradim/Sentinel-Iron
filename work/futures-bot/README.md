@@ -29,7 +29,7 @@ python -m pytest tests -v
 
 ## Broker Environment
 
-Paper and live are real broker environments. There is no fake demo broker path in the core.
+Paper and live are real broker environments. There is no fake demo broker path in the core. Commands that can submit orders in `BROKER_ENV=live` require an additional runtime activation token; credentials and command-specific confirmation text are not enough by themselves.
 
 Required IBKR environment variables:
 
@@ -171,7 +171,13 @@ futures-bot flatten --broker ninjatrader --audit-log data/audit.jsonl --confirm 
 futures-bot flatten --broker optimus --audit-log data/audit.jsonl --confirm FLATTEN-LIVE-POSITIONS
 ```
 
-The command requires exact explicit confirmation text. After confirmation, it connects to the selected real broker environment, fetches current broker positions, skips flat positions, submits opposite-side market orders for nonzero positions, and writes `position_flatten_started`, `position_flatten_order_submitted`, `position_flatten_order_failed`, and `position_flatten_completed` audit events. If any flatten order is rejected synchronously by the broker or route, the command continues through remaining positions and exits nonzero after recording the failure.
+When `BROKER_ENV=live`, add the live activation token in the same invocation:
+
+```powershell
+futures-bot flatten --broker tradestation --audit-log data/audit.jsonl --confirm FLATTEN-LIVE-POSITIONS --live-trading-activation ENABLE-LIVE-TRADING
+```
+
+The command requires exact explicit confirmation text. In live mode, it also requires exact live-trading activation before broker route construction; blocked live attempts write a `live_trading_blocked` audit event. After confirmation and any required live activation, it connects to the selected real broker environment, fetches current broker positions, skips flat positions, submits opposite-side market orders for nonzero positions, and writes `position_flatten_started`, `position_flatten_order_submitted`, `position_flatten_order_failed`, and `position_flatten_completed` audit events. If any flatten order is rejected synchronously by the broker or route, the command continues through remaining positions and exits nonzero after recording the failure.
 
 ## Current Safety Controls
 

@@ -9,6 +9,7 @@ from futures_bot.application.broker_connection import (
     BrokerConnectionRequest,
     BrokerConnectionService,
 )
+from futures_bot.application.live_trading import LiveTradingGuard
 from futures_bot.application.position_flattening import PositionFlatteningService
 from futures_bot.application.reconciliation import ReconcilePositionsUseCase
 from futures_bot.brokers.routes import create_broker_route
@@ -86,11 +87,35 @@ def reconcile(broker: str | None, internal_positions_path: str, audit_log_path: 
     return 0
 
 
-def flatten(confirm: str, broker: str | None, audit_log_path: str) -> int:
+def flatten(
+    confirm: str,
+    broker: str | None,
+    audit_log_path: str,
+    live_trading_activation: str | None = None,
+) -> int:
     if confirm != FLATTEN_CONFIRMATION:
         print(f"flatten requires --confirm {FLATTEN_CONFIRMATION}", file=sys.stderr)
         return 2
     selected_broker = (broker or os.environ.get("BROKER") or "tradestation").strip().lower()
+    environment = os.environ.get("BROKER_ENV", "").strip().lower()
+    live_trading_decision = LiveTradingGuard().evaluate(
+        environment,
+        activation_token=live_trading_activation,
+    )
+    if not live_trading_decision.allowed:
+        JsonlAuditLog(Path(audit_log_path)).append(
+            {
+                "type": "live_trading_blocked",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "broker": selected_broker,
+                "environment": environment,
+                "reason": live_trading_decision.reason,
+                "detail": live_trading_decision.detail,
+            }
+        )
+        print(f"live trading blocked: {live_trading_decision.detail}", file=sys.stderr)
+        return 2
+
     try:
         route = create_broker_route(selected_broker, os.environ)
     except ValueError as exc:

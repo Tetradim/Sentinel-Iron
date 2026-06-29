@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 
+from futures_bot.application.live_trading import LIVE_TRADING_ACTIVATION
 from futures_bot.cli import main
 from futures_bot.domain.orders import BrokerOrder
 from futures_bot.domain.portfolio import AccountSnapshot, Position
@@ -517,6 +518,81 @@ def test_flatten_command_uses_configured_broker_and_writes_audit_log(
     assert [order.quantity for order in broker.submitted_orders] == [1, 2]
     assert "flatten submitted: broker=tradestation submitted=2 failed=0 skipped=0" in captured.out
     assert "position_flatten_completed" in audit_log_path.read_text(encoding="utf-8")
+
+
+def test_flatten_command_blocks_live_environment_without_activation(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    _set_valid_tradestation_env(monkeypatch)
+    monkeypatch.setenv("BROKER_ENV", "live")
+    route_created = False
+
+    def create_fake_route(name: str, env: object):
+        nonlocal route_created
+        route_created = True
+        return _route_for(FlattenBroker())
+
+    monkeypatch.setattr("futures_bot.cli_commands.broker.create_broker_route", create_fake_route)
+    audit_log_path = tmp_path / "audit.jsonl"
+
+    exit_code = main(
+        [
+            "flatten",
+            "--broker",
+            "tradestation",
+            "--audit-log",
+            str(audit_log_path),
+            "--confirm",
+            "FLATTEN-LIVE-POSITIONS",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert route_created is False
+    assert f"live trading requires activation token {LIVE_TRADING_ACTIVATION}" in captured.err
+    audit_event = json.loads(audit_log_path.read_text(encoding="utf-8"))
+    assert audit_event["type"] == "live_trading_blocked"
+    assert audit_event["broker"] == "tradestation"
+    assert audit_event["environment"] == "live"
+    assert audit_event["reason"] == "live_trading_activation_required"
+
+
+def test_flatten_command_allows_live_environment_with_activation(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    _set_valid_tradestation_env(monkeypatch)
+    monkeypatch.setenv("BROKER_ENV", "live")
+    broker = FlattenBroker()
+
+    def create_fake_route(name: str, env: object):
+        assert name == "tradestation"
+        return _route_for(broker)
+
+    monkeypatch.setattr("futures_bot.cli_commands.broker.create_broker_route", create_fake_route)
+
+    exit_code = main(
+        [
+            "flatten",
+            "--broker",
+            "tradestation",
+            "--audit-log",
+            str(tmp_path / "audit.jsonl"),
+            "--confirm",
+            "FLATTEN-LIVE-POSITIONS",
+            "--live-trading-activation",
+            LIVE_TRADING_ACTIVATION,
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert broker.submitted_orders
+    assert "flatten submitted: broker=tradestation submitted=2 failed=0 skipped=0" in captured.out
 
 
 def test_kill_switch_status_reports_inactive_when_state_file_is_missing(tmp_path, capsys):

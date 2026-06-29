@@ -41,7 +41,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             getattr(args, "trading_day", None),
         )
     if args.command == "flatten":
-        return run_flatten(args.confirm, args.broker, args.audit_log)
+        return run_flatten(
+            args.confirm,
+            args.broker,
+            args.audit_log,
+            args.live_trading_activation,
+        )
 
     parser.print_help(sys.stderr)
     return 2
@@ -175,6 +180,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="JSONL audit log path. Defaults to AUDIT_LOG_PATH or data/audit.jsonl.",
     )
     flatten.add_argument("--confirm", default="", help=f"Must equal {FLATTEN_CONFIRMATION}.")
+    flatten.add_argument(
+        "--live-trading-activation",
+        default=None,
+        help="Required exact activation token when BROKER_ENV=live.",
+    )
 
     return parser
 
