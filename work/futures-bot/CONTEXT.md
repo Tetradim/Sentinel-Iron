@@ -15,6 +15,7 @@ This project builds a live-capable futures trading bot. Paper trading is treated
 - **Margin Schedule**: Operator-supplied fallback margin data used only when broker-provided margin estimates are unavailable and explicitly routed through the margin schedule provider.
 - **Rebalance Phase**: A step in the live rebalance workflow that must receive risk context, kill-switch status, broker state, margin data, and audit logging before order submission.
 - **Live Trading Activation**: A runtime operator token required before a command may submit orders while `BROKER_ENV=live`. Broker credentials and command-specific confirmations are not sufficient by themselves.
+- **Kill-Switch Enforcement**: A cancellation sweep that uses persisted order activity and lifecycle state to request cancels for known working or partially filled broker orders after a trading halt.
 
 ## Operating Invariants
 
@@ -23,4 +24,5 @@ This project builds a live-capable futures trading bot. Paper trading is treated
 - Live mode order submission requires an explicit runtime live-trading activation in addition to credentials and command-specific confirmations.
 - Strategy code must not bypass broker routes, risk checks, kill switch checks, audit logging, reconciliation, or order lifecycle persistence.
 - Risk checks should prevent avoidable self-trading before a broker or exchange-level self-match prevention setting has to intervene.
+- A kill-switch halt should block new order entry and provide a tested path to request cancellation of known working orders.
 - Historical data absence is a data-quality failure unless a caller explicitly introduces a separate, reviewed sparse-history workflow.
