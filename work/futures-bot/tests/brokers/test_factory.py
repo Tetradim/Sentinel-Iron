@@ -4,6 +4,7 @@ import pytest
 
 from futures_bot.brokers.ibkr import IbkrBroker
 from futures_bot.brokers.tradestation import TradeStationBroker
+from futures_bot.brokers.tradovate import TradovateBroker
 
 
 def _tradestation_env() -> dict[str, str]:
@@ -33,6 +34,15 @@ def _optimus_env() -> dict[str, str]:
         "OPTIMUS_ACCOUNT_ID": "SIM12345",
         "OPTIMUS_API_URL": "https://optimus-bridge.example.test/api",
         "OPTIMUS_APP_NAME": "futures-bot-test",
+    }
+
+
+def _tradovate_env() -> dict[str, str]:
+    return {
+        "BROKER_ENV": "paper",
+        "TRADOVATE_ACCESS_TOKEN": "secret-token",
+        "TRADOVATE_ACCOUNT_ID": "123456",
+        "TRADOVATE_ACCOUNT_SPEC": "DEMO123456",
     }
 
 
@@ -197,6 +207,17 @@ def test_create_broker_returns_optimus_adapter_from_environment_when_bridge_url_
     assert broker.config.route.value == "rithmic"
     assert broker.config.api_url == "https://optimus-bridge.example.test/api"
     assert broker.config.account_id == "SIM12345"
+
+
+def test_create_broker_returns_tradovate_adapter_from_environment():
+    from futures_bot.brokers.factory import create_broker
+
+    broker = create_broker("tradovate", _tradovate_env())
+
+    assert isinstance(broker, TradovateBroker)
+    assert broker.config.base_url == "https://demo.tradovateapi.com/v1"
+    assert broker.config.account_id == 123456
+    assert broker.config.account_spec == "DEMO123456"
 
 
 def test_create_broker_rejects_unknown_broker():
