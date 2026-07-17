@@ -10,6 +10,7 @@ from sentinel_iron.cli_commands.broker import broker_connect as run_broker_conne
 from sentinel_iron.cli_commands.broker import flatten as run_flatten
 from sentinel_iron.cli_commands.broker import reconcile as run_reconcile
 from sentinel_iron.cli_commands.config import config_check as run_config_check
+from sentinel_iron.cli_commands.general_api import run_general_api
 from sentinel_iron.cli_commands.validation import instrument_catalog as run_instrument_catalog
 from sentinel_iron.cli_commands.validation import kill_switch as run_kill_switch
 from sentinel_iron.cli_commands.validation import margin_schedules as run_margin_schedules
@@ -47,6 +48,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.audit_log,
             args.live_trading_activation,
         )
+    if args.command == "general-api":
+        return run_general_api(args.general_api_command, args.config_file, args)
 
     parser.print_help(sys.stderr)
     return 2
@@ -185,6 +188,35 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Required exact activation token when BROKER_ENV=live.",
     )
+
+    general_api = subparsers.add_parser(
+        "general-api",
+        help="Configure Sentinel Archive's General API replay-broker connection.",
+    )
+    general_api.add_argument(
+        "--config-file",
+        default=os.environ.get("GENERAL_API_CONFIG_PATH", "data/general_api.json"),
+        help="Private General API settings path. Defaults to data/general_api.json.",
+    )
+    general_api_subparsers = general_api.add_subparsers(dest="general_api_command")
+    general_api_subparsers.add_parser("show", help="Show redacted General API settings.")
+    configure = general_api_subparsers.add_parser("configure", help="Update General API settings.")
+    enabled = configure.add_mutually_exclusive_group()
+    enabled.add_argument("--enable", action="store_true", dest="enabled")
+    enabled.add_argument("--disable", action="store_false", dest="enabled")
+    configure.set_defaults(enabled=None)
+    configure.add_argument("--base-url")
+    configure.add_argument("--run-id")
+    configure.add_argument("--participant-id")
+    configure.add_argument("--symbols", help="Comma-separated futures symbols.")
+    configure.add_argument("--api-token", help="Archive participant token; stored in a mode-0600 file.")
+    configure.add_argument("--timeout-seconds", type=float)
+    configure.add_argument("--starting-cash", type=float)
+    configure.add_argument("--commission-per-order", type=float)
+    configure.add_argument("--slippage-bps", type=float)
+    general_api_subparsers.add_parser("test", help="Test Archive reachability and authentication.")
+    general_api_subparsers.add_parser("register", help="Register Iron with the configured replay run.")
+    general_api_subparsers.add_parser("account", help="Read Iron's simulated account from Archive.")
 
     return parser
 
