@@ -1,0 +1,32 @@
+name: Iron Edge Strategy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/sentinel_iron/edge_strategy.py'
+      - 'src/sentinel_iron/edge_worker.py'
+      - 'tests/test_edge_strategy.py'
+      - 'pyproject.toml'
+      - '.github/workflows/edge-strategy.yml'
+  workflow_dispatch:
+
+jobs:
+  edge-strategy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip wheel
+          pip install -e '.[dev]'
+      - name: Compile Edge execution runtime
+        run: python -m py_compile src/sentinel_iron/edge_strategy.py src/sentinel_iron/edge_worker.py
+      - name: Run Edge execution regressions
+        run: pytest -q tests/test_edge_strategy.py
