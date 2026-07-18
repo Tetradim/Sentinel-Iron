@@ -15,6 +15,7 @@ ibkr = ["ibapi>=9.81.1.post1"]
 
 [project.scripts]
 sentinel-iron = "sentinel_iron.cli:main"
+sentinel-iron-edge = "sentinel_iron.edge_worker:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
