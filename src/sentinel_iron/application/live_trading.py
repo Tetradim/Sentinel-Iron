@@ -20,17 +20,11 @@ class LiveTradingGuard:
         activation_token: str | None,
     ) -> LiveTradingDecision:
         environment = broker_environment.strip().lower()
-        if environment == "paper":
-            return LiveTradingDecision(
-                allowed=True,
-                reason=None,
-                detail="paper broker environment does not require live activation",
-            )
         if environment != "live":
             return LiveTradingDecision(
                 allowed=False,
                 reason="unsupported_broker_environment",
-                detail="broker environment must be paper or live",
+                detail="broker environment must be live",
             )
 
         if activation_token != LIVE_TRADING_ACTIVATION:

@@ -7,12 +7,10 @@ from urllib.parse import urlparse
 
 
 class BrokerEnvironment(StrEnum):
-    PAPER = "paper"
     LIVE = "live"
 
 
 DEFAULT_BASE_URLS = {
-    BrokerEnvironment.PAPER: "https://api.cert.tastytrade.com",
     BrokerEnvironment.LIVE: "https://api.tastytrade.com",
 }
 

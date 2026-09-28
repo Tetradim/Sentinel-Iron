@@ -27,7 +27,7 @@ class OrderGatewayService:
         submission: OrderSubmissionService,
         audit_log: AuditLogPort,
         kill_switch_store: KillSwitchStorePort | None = None,
-        broker_environment: str = "paper",
+        broker_environment: str = "live",
         live_trading_activation: str | None = None,
     ) -> None:
         self._submission = submission

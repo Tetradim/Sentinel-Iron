@@ -17,8 +17,8 @@ class BrokerConnectionRequest:
     def __post_init__(self) -> None:
         if not self.broker_name:
             raise ValueError("broker_name is required")
-        if self.environment not in {"paper", "live"}:
-            raise ValueError("environment must be paper or live")
+        if self.environment != "live":
+            raise ValueError("broker environment must be live")
 
 
 @dataclass(frozen=True)

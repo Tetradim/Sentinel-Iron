@@ -7,12 +7,10 @@ from urllib.parse import urlparse
 
 
 class BrokerEnvironment(StrEnum):
-    PAPER = "paper"
     LIVE = "live"
 
 
 DEFAULT_BASE_URLS = {
-    BrokerEnvironment.PAPER: "https://sim-api.tradestation.com/v3",
     BrokerEnvironment.LIVE: "https://api.tradestation.com/v3",
 }
 

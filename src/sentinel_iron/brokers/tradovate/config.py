@@ -7,12 +7,10 @@ from urllib.parse import urlparse
 
 
 class BrokerEnvironment(StrEnum):
-    PAPER = "paper"
     LIVE = "live"
 
 
 DEFAULT_BASE_URLS = {
-    BrokerEnvironment.PAPER: "https://demo.tradovateapi.com/v1",
     BrokerEnvironment.LIVE: "https://live.tradovateapi.com/v1",
 }
 

@@ -6,7 +6,6 @@ from typing import Mapping
 
 
 class BrokerEnvironment(StrEnum):
-    PAPER = "paper"
     LIVE = "live"
 
 
